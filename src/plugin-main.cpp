@@ -19,8 +19,12 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
+#include <util/config-file.h>
 
 #include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QMainWindow>
 #include <QMessageBox>
 #include <QMetaObject>
@@ -50,19 +54,49 @@ static void open_editor()
 	ensure_dialog()->showBrowser();
 }
 
+static QString replay_folder_from_config()
+{
+	config_t *cfg = obs_frontend_get_profile_config();
+	if (!cfg)
+		return QString();
+	const char *mode = config_get_string(cfg, "Output", "Mode");
+	const char *path = (mode && strcmp(mode, "Advanced") == 0) ? config_get_string(cfg, "AdvOut", "RecFilePath")
+								   : config_get_string(cfg, "SimpleOutput", "FilePath");
+	return path ? QString::fromUtf8(path) : QString();
+}
+
+static const char *kTempDirName = ".replay-clip-editor-temp";
+
+/* Remove leftover working copies (e.g. after a crash or forced quit). */
+static void purge_temp_replays()
+{
+	QString folder = replay_folder_from_config();
+	if (folder.isEmpty())
+		return;
+	QDir dir(folder + QStringLiteral("/") + QString::fromUtf8(kTempDirName));
+	if (!dir.exists())
+		return;
+	for (const QFileInfo &fi : dir.entryInfoList(QDir::Files))
+		QFile::remove(fi.absoluteFilePath());
+}
+
 /* Steam-style one-shot: save the replay buffer and jump straight into the
  * editor with the result. Runs on the UI thread. */
-static void clip_that()
+void request_clip_that()
 {
 	if (!obs_frontend_replay_buffer_active()) {
-		/* Arm it for next time (no-op when disabled in settings). */
+		/* Arm it for next time (no-op when disabled in settings),
+		 * tell the user, and fall back to the clip browser. */
 		obs_frontend_replay_buffer_start();
 		auto *main_window = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 		QMessageBox::information(main_window, QString::fromUtf8(obs_module_text("ReplayClipEditor.Title")),
 					 QString::fromUtf8(obs_module_text("ReplayClipEditor.ClipThat.NotActive")));
+		open_editor();
 		return;
 	}
 	pending_clip_that = true;
+	/* Show the window right away — muxing a long buffer takes a while. */
+	ensure_dialog()->showSavingReplay();
 	obs_frontend_replay_buffer_save();
 }
 
@@ -83,12 +117,13 @@ static void on_clip_hotkey(void *, obs_hotkey_id, obs_hotkey_t *, bool pressed)
 {
 	if (!pressed)
 		return;
-	QMetaObject::invokeMethod(qApp, [] { clip_that(); }, Qt::QueuedConnection);
+	QMetaObject::invokeMethod(qApp, [] { request_clip_that(); }, Qt::QueuedConnection);
 }
 
 static void on_frontend_event(enum obs_frontend_event event, void *)
 {
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
+		purge_temp_replays();
 		/* optional auto-start of the replay buffer */
 		char *path = obs_module_config_path("settings.json");
 		obs_data_t *data = path ? obs_data_create_from_json_file(path) : nullptr;
@@ -117,6 +152,16 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 		}
 
 		if (!path.isEmpty()) {
+			/* Stash the working copy in a temp subfolder so it
+			 * stays out of the user's clip library (same volume,
+			 * so this is an instant rename). */
+			QFileInfo fi(path);
+			QString tempDir = fi.absolutePath() + QStringLiteral("/") + QString::fromUtf8(kTempDirName);
+			if (QDir().mkpath(tempDir)) {
+				QString tempPath = tempDir + QStringLiteral("/") + fi.fileName();
+				if (QFile::rename(path, tempPath))
+					path = tempPath;
+			}
 			QMetaObject::invokeMethod(
 				qApp, [path] { open_editor_with_clip(path); }, Qt::QueuedConnection);
 		} else {
@@ -140,10 +185,10 @@ bool obs_module_load(void)
 {
 	register_preview_source();
 
+	/* One entry: straight into clipping the buffer; the browser is a
+	 * click away via Back to Clips. */
 	obs_frontend_add_tools_menu_item(obs_module_text("ReplayClipEditor.MenuItem"),
-					 [](void *) { open_editor(); }, nullptr);
-	obs_frontend_add_tools_menu_item(obs_module_text("ReplayClipEditor.MenuClipThat"),
-					 [](void *) { clip_that(); }, nullptr);
+					 [](void *) { request_clip_that(); }, nullptr);
 
 	open_hotkey_id = obs_hotkey_register_frontend("replay-clip-editor.open",
 						      obs_module_text("ReplayClipEditor.Hotkey.Open"), on_open_hotkey,

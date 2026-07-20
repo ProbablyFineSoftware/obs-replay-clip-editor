@@ -250,6 +250,7 @@ QWidget *ReplayClipEditorDialog::buildBrowserPage()
 	auto *header = new QHBoxLayout;
 	auto *title = new QLabel(QStringLiteral("<b>%1</b>").arg(text("ReplayClipEditor.Browser.Heading")));
 	title->setStyleSheet(QStringLiteral("font-size: 15px;"));
+
 	folderLabel = new QLabel;
 	folderLabel->setStyleSheet(QStringLiteral("color: gray;"));
 
@@ -300,19 +301,22 @@ QWidget *ReplayClipEditorDialog::buildBrowserPage()
 	layout->addWidget(clipList, 1);
 
 	auto *bottom = new QHBoxLayout;
-	autoStartCheck = new QCheckBox(text("ReplayClipEditor.Browser.AutoStart"));
-	autoStartCheck->setToolTip(text("ReplayClipEditor.Browser.AutoStartTip"));
-	connect(autoStartCheck, &QCheckBox::toggled, this, [this](bool on) {
-		savePersistedSettings();
-		if (on && !obs_frontend_replay_buffer_active())
-			obs_frontend_replay_buffer_start();
-	});
+	auto *clipNowBtn = new QPushButton(text("ReplayClipEditor.Browser.ClipNow"));
+	clipNowBtn->setToolTip(text("ReplayClipEditor.Browser.ClipNowTip"));
+	clipNowBtn->setStyleSheet(QStringLiteral("font-weight: bold; padding: 4px 18px;"));
+	connect(clipNowBtn, &QPushButton::clicked, this, []() { request_clip_that(); });
+
 	auto *hint = new QLabel(text("ReplayClipEditor.Browser.Hint"));
 	hint->setStyleSheet(QStringLiteral("color: gray;"));
-	bottom->addWidget(autoStartCheck);
+
+	/* phantom spacer mirrors the button so the hint centers on the window */
+	auto *bottomSpacer = new QWidget;
+	bottomSpacer->setFixedWidth(clipNowBtn->sizeHint().width());
+	bottom->addWidget(bottomSpacer);
 	bottom->addStretch(1);
 	bottom->addWidget(hint);
 	bottom->addStretch(1);
+	bottom->addWidget(clipNowBtn);
 	layout->addLayout(bottom);
 
 	return page;
@@ -406,23 +410,48 @@ void ReplayClipEditorDialog::showBrowser()
 	activateWindow();
 }
 
+void ReplayClipEditorDialog::showSavingReplay()
+{
+	cleanupTemporaryReplay();
+	player->closeFile();
+	filmstripGeneration++;
+	timeline->clear();
+	currentClip = ClipInfo();
+	clipNameLabel->setText(text("ReplayClipEditor.Editor.SavingReplay"));
+	exportStatusLabel->clear();
+	openFolderButton->setVisible(false);
+	progressBar->setVisible(false);
+	exportButton->setEnabled(false);
+	stack->setCurrentIndex(1);
+	showNormal();
+	raise();
+	activateWindow();
+}
+
 void ReplayClipEditorDialog::openClipExternal(const QString &path)
 {
 	showNormal();
 	raise();
 	activateWindow();
 	openClip(path);
-	if (currentClip.valid && currentClip.path == path) {
-		/* Clip That replays are working copies: once a trim is
-		 * exported, the full-length replay is deleted on leaving. */
+	if (currentClip.valid && currentClip.path == path)
 		currentClipIsTemporaryReplay = true;
-		currentClipWasExported = false;
-	}
+}
+
+QString ReplayClipEditorDialog::clipDefaultOutputFolder() const
+{
+	QFileInfo fi(currentClip.path);
+	QDir d(fi.absolutePath());
+	if (d.dirName() == QStringLiteral(".replay-clip-editor-temp"))
+		d.cdUp();
+	return d.absolutePath();
 }
 
 void ReplayClipEditorDialog::cleanupTemporaryReplay()
 {
-	if (currentClipIsTemporaryReplay && currentClipWasExported && !currentClip.path.isEmpty()) {
+	/* Clip That replays are working copies: deleted whenever the user
+	 * leaves them, exported or not — the trims are what gets kept. */
+	if (currentClipIsTemporaryReplay && !currentClip.path.isEmpty()) {
 		player->closeFile(); /* release file handles first */
 		if (QFile::remove(currentClip.path))
 			blog(LOG_INFO, "[replay-clip-editor] removed temporary replay '%s'",
@@ -432,7 +461,6 @@ void ReplayClipEditorDialog::cleanupTemporaryReplay()
 			     currentClip.path.toUtf8().constData());
 	}
 	currentClipIsTemporaryReplay = false;
-	currentClipWasExported = false;
 }
 
 /* ----------------------------------------------------------------- editor */
@@ -451,13 +479,28 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 	clipNameLabel = new QLabel;
 	clipNameLabel->setStyleSheet(QStringLiteral("font-weight: bold;"));
 	clipNameLabel->setAlignment(Qt::AlignCenter);
-	/* phantom spacer mirrors the back button so the title centers on the
-	 * window, not on the leftover space */
-	auto *headerSpacer = new QWidget;
-	headerSpacer->setFixedWidth(backBtn->sizeHint().width());
+
+	autoStartCheck = new QCheckBox(text("ReplayClipEditor.Browser.AutoStart"));
+	autoStartCheck->setToolTip(text("ReplayClipEditor.Browser.AutoStartTip"));
+	connect(autoStartCheck, &QCheckBox::toggled, this, [this](bool on) {
+		savePersistedSettings();
+		if (on && !obs_frontend_replay_buffer_active())
+			obs_frontend_replay_buffer_start();
+	});
+
+	/* balance the asymmetric side widgets so the title truly centers */
+	int wBack = backBtn->sizeHint().width();
+	int wCheck = autoStartCheck->sizeHint().width();
+	auto *padLeft = new QWidget;
+	padLeft->setFixedWidth(std::max(0, wCheck - wBack));
+	auto *padRight = new QWidget;
+	padRight->setFixedWidth(std::max(0, wBack - wCheck));
+
 	header->addWidget(backBtn);
+	header->addWidget(padLeft);
 	header->addWidget(clipNameLabel, 1);
-	header->addWidget(headerSpacer);
+	header->addWidget(padRight);
+	header->addWidget(autoStartCheck);
 	layout->addLayout(header);
 
 	/* preview */
@@ -722,9 +765,10 @@ void ReplayClipEditorDialog::openClip(const QString &path)
 	exportStatusLabel->clear();
 	openFolderButton->setVisible(false);
 	progressBar->setVisible(false);
+	exportButton->setEnabled(true);
 
 	/* default destination: clip's folder (or the user's saved choice) */
-	QString defaultFolder = persistedOutputFolder.isEmpty() ? fi.absolutePath() : persistedOutputFolder;
+	QString defaultFolder = persistedOutputFolder.isEmpty() ? clipDefaultOutputFolder() : persistedOutputFolder;
 	folderEdit->setText(QDir::toNativeSeparators(defaultFolder));
 	nameEdit->setText(fi.completeBaseName() + QStringLiteral("_clip"));
 	updateExtensionLabel();
@@ -1011,7 +1055,7 @@ QString ReplayClipEditorDialog::buildOutputPath() const
 {
 	QString folder = QDir::fromNativeSeparators(folderEdit->text().trimmed());
 	if (folder.isEmpty())
-		folder = QFileInfo(currentClip.path).absolutePath();
+		folder = clipDefaultOutputFolder();
 	QString name = nameEdit->text().trimmed();
 	if (name.isEmpty())
 		name = QFileInfo(currentClip.path).completeBaseName() + QStringLiteral("_clip");
@@ -1060,7 +1104,6 @@ void ReplayClipEditorDialog::startExport()
 			setExportUiBusy(false);
 			if (ok) {
 				lastExportedFile = msg;
-				currentClipWasExported = true;
 				exportStatusLabel->setText(text("ReplayClipEditor.Export.Done") + QStringLiteral(" ") +
 							   QFileInfo(msg).fileName());
 				openFolderButton->setVisible(true);
@@ -1148,7 +1191,7 @@ void ReplayClipEditorDialog::savePersistedSettings()
 	 * clip's own folder (which is the per-clip default). */
 	if (currentClip.valid) {
 		QString folder = QDir::fromNativeSeparators(folderEdit->text().trimmed());
-		if (folder == QFileInfo(currentClip.path).absolutePath())
+		if (folder == clipDefaultOutputFolder())
 			persistedOutputFolder.clear();
 		else
 			persistedOutputFolder = folder;

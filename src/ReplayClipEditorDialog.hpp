@@ -30,6 +30,10 @@ class QCheckBox;
 class PreviewPlayer;
 class TimelineWidget;
 
+/* Defined in plugin-main.cpp: saves the replay buffer and opens the editor
+ * on the result (the Clip That flow). */
+void request_clip_that();
+
 class ReplayClipEditorDialog : public QDialog {
 	Q_OBJECT
 
@@ -38,6 +42,9 @@ public:
 	~ReplayClipEditorDialog() override;
 
 	void showBrowser();
+	/* Bring the window up in a "saving replay" state while OBS muxes the
+	 * buffer to disk — long buffers take a while. */
+	void showSavingReplay();
 	/* Bring the window up and load a clip straight into the editor
 	 * (used by the Clip That flow). */
 	void openClipExternal(const QString &path);
@@ -74,6 +81,10 @@ private:
 	void seekKeepingState(qint64 ms);
 	/* Delete a Clip That replay once a trim has been exported from it. */
 	void cleanupTemporaryReplay();
+	/* The clip's folder, except for temp replays where it is the real
+	 * clips folder (the temp dir's parent) — exports must never land in
+	 * the purged temp dir. */
+	QString clipDefaultOutputFolder() const;
 	void setExportUiBusy(bool busy);
 	void loadPersistedSettings();
 	void savePersistedSettings();
@@ -119,7 +130,6 @@ private:
 
 	ClipInfo currentClip;
 	bool currentClipIsTemporaryReplay = false;
-	bool currentClipWasExported = false;
 	QTimer *viewDebounce = nullptr;
 	QPointer<ExportWorker> exportWorker;
 	std::atomic<int> filmstripGeneration{0};

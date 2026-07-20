@@ -58,20 +58,41 @@ ObsDisplayWidget::~ObsDisplayWidget()
 	shutdown();
 }
 
-void ObsDisplayWidget::shutdown()
+void ObsDisplayWidget::destroyDisplay()
 {
 	if (display) {
 		obs_display_remove_draw_callback(display, drawCallback, this);
 		obs_display_destroy(display);
 		display = nullptr;
 	}
+	boundHwnd = nullptr;
+}
+
+void ObsDisplayWidget::shutdown()
+{
+	destroyDisplay();
 	source = nullptr;
+}
+
+bool ObsDisplayWidget::event(QEvent *event)
+{
+	/* Qt recreated the platform window (happens when the dialog is closed
+	 * and reopened); the display is bound to the dead HWND and would show
+	 * as a blank white area. Drop it — show/resize recreates it. */
+	if (event->type() == QEvent::WinIdChange && display)
+		destroyDisplay();
+	return QWidget::event(event);
 }
 
 void ObsDisplayWidget::createDisplay()
 {
-	if (display || !windowHandle())
+	if (!windowHandle())
 		return;
+	if (display) {
+		if (reinterpret_cast<void *>(winId()) == boundHwnd)
+			return;
+		destroyDisplay(); /* stale HWND binding */
+	}
 
 	gs_init_data info = {};
 	QSize size = this->size() * devicePixelRatioF();
@@ -83,8 +104,10 @@ void ObsDisplayWidget::createDisplay()
 
 	/* libobs color byte order is 0xAABBGGRR */
 	display = obs_display_create(&info, 0xFF101010);
-	if (display)
+	if (display) {
 		obs_display_add_draw_callback(display, drawCallback, this);
+		boundHwnd = info.window.hwnd;
+	}
 }
 
 void ObsDisplayWidget::drawCallback(void *data, uint32_t cx, uint32_t cy)

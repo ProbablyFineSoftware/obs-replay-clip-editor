@@ -40,13 +40,18 @@ protected:
 	void resizeEvent(QResizeEvent *event) override;
 	void paintEvent(QPaintEvent *event) override;
 	void mousePressEvent(QMouseEvent *event) override;
+	bool event(QEvent *event) override;
 
 private:
 	void createDisplay();
+	void destroyDisplay();
 	static void drawCallback(void *data, uint32_t cx, uint32_t cy);
 
 	obs_source_t *source = nullptr;
 	obs_display_t *display = nullptr;
+	void *boundHwnd = nullptr; /* HWND the display is attached to; Qt can
+				      recreate the platform window on dialog
+				      close/reopen */
 };
 
 /* Frame-accurate preview: FFPlayerCore decodes and pushes into a private
