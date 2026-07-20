@@ -38,6 +38,9 @@ public:
 	~ReplayClipEditorDialog() override;
 
 	void showBrowser();
+	/* Bring the window up and load a clip straight into the editor
+	 * (used by the Clip That flow). */
+	void openClipExternal(const QString &path);
 	/* Release OBS resources; must run while libobs is alive. */
 	void shutdown();
 
@@ -69,6 +72,8 @@ private:
 	QString buildOutputPath() const;
 	QVector<int> enabledAudioStreams() const;
 	void seekKeepingState(qint64 ms);
+	/* Delete a Clip That replay once a trim has been exported from it. */
+	void cleanupTemporaryReplay();
 	void setExportUiBusy(bool busy);
 	void loadPersistedSettings();
 	void savePersistedSettings();
@@ -80,6 +85,7 @@ private:
 	QListWidget *clipList = nullptr;
 	QLabel *folderLabel = nullptr;
 	QPushButton *resetFolderBtn = nullptr;
+	QCheckBox *autoStartCheck = nullptr;
 	QString customBrowseFolder; /* empty = OBS recording folder */
 
 	/* editor */
@@ -112,6 +118,8 @@ private:
 	QPushButton *openFolderButton = nullptr;
 
 	ClipInfo currentClip;
+	bool currentClipIsTemporaryReplay = false;
+	bool currentClipWasExported = false;
 	QTimer *viewDebounce = nullptr;
 	QPointer<ExportWorker> exportWorker;
 	std::atomic<int> filmstripGeneration{0};

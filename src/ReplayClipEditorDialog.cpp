@@ -20,6 +20,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -232,8 +233,10 @@ void ReplayClipEditorDialog::shutdown()
 		exportWorker->cancel();
 		exportWorker->wait(10000);
 	}
-	if (player)
+	if (player) {
+		cleanupTemporaryReplay(); /* closes the file via the player */
 		player->shutdown();
+	}
 }
 
 /* ---------------------------------------------------------------- browser */
@@ -296,10 +299,21 @@ QWidget *ReplayClipEditorDialog::buildBrowserPage()
 		[this](QListWidgetItem *item) { openClip(item->data(Qt::UserRole).toString()); });
 	layout->addWidget(clipList, 1);
 
+	auto *bottom = new QHBoxLayout;
+	autoStartCheck = new QCheckBox(text("ReplayClipEditor.Browser.AutoStart"));
+	autoStartCheck->setToolTip(text("ReplayClipEditor.Browser.AutoStartTip"));
+	connect(autoStartCheck, &QCheckBox::toggled, this, [this](bool on) {
+		savePersistedSettings();
+		if (on && !obs_frontend_replay_buffer_active())
+			obs_frontend_replay_buffer_start();
+	});
 	auto *hint = new QLabel(text("ReplayClipEditor.Browser.Hint"));
 	hint->setStyleSheet(QStringLiteral("color: gray;"));
-	hint->setAlignment(Qt::AlignCenter);
-	layout->addWidget(hint);
+	bottom->addWidget(autoStartCheck);
+	bottom->addStretch(1);
+	bottom->addWidget(hint);
+	bottom->addStretch(1);
+	layout->addLayout(bottom);
 
 	return page;
 }
@@ -390,6 +404,35 @@ void ReplayClipEditorDialog::showBrowser()
 	showNormal();
 	raise();
 	activateWindow();
+}
+
+void ReplayClipEditorDialog::openClipExternal(const QString &path)
+{
+	showNormal();
+	raise();
+	activateWindow();
+	openClip(path);
+	if (currentClip.valid && currentClip.path == path) {
+		/* Clip That replays are working copies: once a trim is
+		 * exported, the full-length replay is deleted on leaving. */
+		currentClipIsTemporaryReplay = true;
+		currentClipWasExported = false;
+	}
+}
+
+void ReplayClipEditorDialog::cleanupTemporaryReplay()
+{
+	if (currentClipIsTemporaryReplay && currentClipWasExported && !currentClip.path.isEmpty()) {
+		player->closeFile(); /* release file handles first */
+		if (QFile::remove(currentClip.path))
+			blog(LOG_INFO, "[replay-clip-editor] removed temporary replay '%s'",
+			     currentClip.path.toUtf8().constData());
+		else
+			blog(LOG_WARNING, "[replay-clip-editor] could not remove temporary replay '%s'",
+			     currentClip.path.toUtf8().constData());
+	}
+	currentClipIsTemporaryReplay = false;
+	currentClipWasExported = false;
 }
 
 /* ----------------------------------------------------------------- editor */
@@ -656,6 +699,7 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 
 void ReplayClipEditorDialog::openClip(const QString &path)
 {
+	cleanupTemporaryReplay();
 	currentClip = VideoProbe::probe(path);
 	if (!currentClip.valid) {
 		exportStatusLabel->setText(text("ReplayClipEditor.Error.OpenFailed"));
@@ -703,6 +747,7 @@ void ReplayClipEditorDialog::backToBrowser()
 		return; /* don't abandon a running export */
 	filmstripGeneration++;
 	player->closeFile();
+	cleanupTemporaryReplay();
 	timeline->clear();
 	stack->setCurrentIndex(0);
 	refreshClipList();
@@ -1015,6 +1060,7 @@ void ReplayClipEditorDialog::startExport()
 			setExportUiBusy(false);
 			if (ok) {
 				lastExportedFile = msg;
+				currentClipWasExported = true;
 				exportStatusLabel->setText(text("ReplayClipEditor.Export.Done") + QStringLiteral(" ") +
 							   QFileInfo(msg).fileName());
 				openFolderButton->setVisible(true);
@@ -1075,6 +1121,11 @@ void ReplayClipEditorDialog::loadPersistedSettings()
 		containerCombo->setCurrentText(QString::fromUtf8(container));
 	persistedOutputFolder = QString::fromUtf8(obs_data_get_string(data, "output_folder"));
 	customBrowseFolder = QString::fromUtf8(obs_data_get_string(data, "browse_folder"));
+	/* blockSignals: the toggled handler saves settings, which would
+	 * clobber values not yet loaded into the UI */
+	autoStartCheck->blockSignals(true);
+	autoStartCheck->setChecked(obs_data_get_bool(data, "auto_start_replay_buffer"));
+	autoStartCheck->blockSignals(false);
 	if (obs_data_has_user_value(data, "enabled_tracks_mask"))
 		enabledTracksMask = (int)obs_data_get_int(data, "enabled_tracks_mask");
 	if (obs_data_has_user_value(data, "preview_quality")) {
@@ -1113,6 +1164,7 @@ void ReplayClipEditorDialog::savePersistedSettings()
 	obs_data_set_string(data, "container", containerCombo->currentText().toUtf8().constData());
 	obs_data_set_string(data, "output_folder", persistedOutputFolder.toUtf8().constData());
 	obs_data_set_string(data, "browse_folder", customBrowseFolder.toUtf8().constData());
+	obs_data_set_bool(data, "auto_start_replay_buffer", autoStartCheck->isChecked());
 	obs_data_set_int(data, "enabled_tracks_mask", enabledTracksMask);
 	obs_data_set_int(data, "preview_quality", previewQualityCombo->currentData().toInt());
 	obs_data_save_json(data, settingsFilePath().toUtf8().constData());
@@ -1189,6 +1241,7 @@ void ReplayClipEditorDialog::closeEvent(QCloseEvent *event)
 	}
 	filmstripGeneration++;
 	player->closeFile();
+	cleanupTemporaryReplay();
 	timeline->clear();
 	QDialog::closeEvent(event);
 }
