@@ -62,16 +62,25 @@ void apply_rate_control(AVCodecContext *enc, AVDictionary **opts, const ExportSe
 	if (id.contains(QStringLiteral("nvenc"))) {
 		av_dict_set(opts, "preset", "p5", 0);
 		av_dict_set(opts, "tune", "hq", 0);
+		/* Match OBS's NVENC configuration so quality per bit is
+		 * comparable: B-frames, adaptive quantization, multipass. */
+		enc->max_b_frames = 2;
+		av_dict_set(opts, "spatial_aq", "1", 0);
+		av_dict_set(opts, "aq-strength", "8", 0);
+		if (id.startsWith(QStringLiteral("h264")))
+			av_dict_set(opts, "profile", "high", 0);
 		if (s.rateControl == QStringLiteral("CQP")) {
 			av_dict_set(opts, "rc", "constqp", 0);
 			av_dict_set(opts, "qp", cqStr.constData(), 0);
 		} else if (s.rateControl == QStringLiteral("CBR")) {
 			av_dict_set(opts, "rc", "cbr", 0);
+			av_dict_set(opts, "multipass", "qres", 0);
 			enc->bit_rate = bitrate;
 			enc->rc_max_rate = bitrate;
 			enc->rc_buffer_size = (int)bitrate;
 		} else {
 			av_dict_set(opts, "rc", "vbr", 0);
+			av_dict_set(opts, "multipass", "qres", 0);
 			enc->bit_rate = bitrate;
 			enc->rc_max_rate = bitrate * 3 / 2;
 		}
@@ -290,8 +299,14 @@ void ExportWorker::run()
 		return fail(QStringLiteral("Encoder not available: %1").arg(settings.encoderName));
 
 	p.venc = avcodec_alloc_context3(vencCodec);
-	p.venc->width = p.vdec->width;
-	p.venc->height = p.vdec->height;
+	int outW = p.vdec->width;
+	int outH = p.vdec->height;
+	if (settings.scaleHeight > 0 && settings.scaleHeight < p.vdec->height) {
+		outH = settings.scaleHeight & ~1;
+		outW = (int)((int64_t)p.vdec->width * outH / p.vdec->height) & ~1;
+	}
+	p.venc->width = outW;
+	p.venc->height = outH;
 	p.venc->sample_aspect_ratio = p.vdec->sample_aspect_ratio;
 	p.venc->time_base = vst->time_base;
 	AVRational fr = vst->avg_frame_rate.num > 0 ? vst->avg_frame_rate : AVRational{60, 1};
@@ -478,14 +493,16 @@ void ExportWorker::run()
 
 	auto sendVideoFrame = [&](AVFrame *f) -> int {
 		AVFrame *toSend = f;
-		if (f && f->format != p.venc->pix_fmt) {
+		bool needsConvert = f && (f->format != p.venc->pix_fmt || f->width != p.venc->width ||
+					  f->height != p.venc->height);
+		if (needsConvert) {
 			if (!p.sws) {
-				p.sws = sws_getContext(f->width, f->height, (AVPixelFormat)f->format, f->width,
-						       f->height, p.venc->pix_fmt, SWS_BILINEAR, nullptr, nullptr,
+				p.sws = sws_getContext(f->width, f->height, (AVPixelFormat)f->format, p.venc->width,
+						       p.venc->height, p.venc->pix_fmt, SWS_BICUBIC, nullptr, nullptr,
 						       nullptr);
 				p.swsFrame = av_frame_alloc();
-				p.swsFrame->width = f->width;
-				p.swsFrame->height = f->height;
+				p.swsFrame->width = p.venc->width;
+				p.swsFrame->height = p.venc->height;
 				p.swsFrame->format = p.venc->pix_fmt;
 				av_frame_get_buffer(p.swsFrame, 0);
 			}

@@ -230,6 +230,7 @@ void PreviewPlayer::openFile(const QString &path, double fileFps, qint64 fileDur
 		return;
 
 	obs_source_set_monitoring_type(source, OBS_MONITORING_TYPE_MONITOR_ONLY);
+	obs_source_set_volume(source, monitorVolume);
 	/* We pace frames ourselves; OBS's async timing buffer would only add
 	 * a visible delay at every play start. */
 	obs_source_set_async_unbuffered(source, true);
@@ -323,4 +324,11 @@ void PreviewPlayer::setPreviewQuality(int level)
 {
 	previewQuality = level;
 	core.setQuality(level);
+}
+
+void PreviewPlayer::setMonitorVolume(float volume)
+{
+	monitorVolume = volume;
+	if (source)
+		obs_source_set_volume(source, volume);
 }

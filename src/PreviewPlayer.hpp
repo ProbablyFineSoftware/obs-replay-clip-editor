@@ -83,6 +83,8 @@ public:
 	void stepFrames(int count);
 	void setEnabledTracks(const QVector<int> &streams);
 	void setPreviewQuality(int level); /* 0 full, 1 half, 2 quarter */
+	/* Monitoring loudness only — exports are unaffected. */
+	void setMonitorVolume(float volume);
 
 signals:
 	void positionChanged(qint64 ms);
@@ -98,4 +100,5 @@ private:
 	qint64 probedDurationMs = 0;
 	bool lastPlaying = false;
 	int previewQuality = 0;
+	float monitorVolume = 1.0f;
 };

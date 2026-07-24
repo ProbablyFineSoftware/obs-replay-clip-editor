@@ -14,6 +14,12 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <util/config-file.h>
 #include <util/platform.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -28,9 +34,11 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMessageBox>
 #include <QPainter>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QStyle>
@@ -101,10 +109,13 @@ QString mapAdvancedEncoderId(const QString &id)
 		{"obs_x264", "libx264"},
 		{"jim_nvenc", "h264_nvenc"},
 		{"obs_nvenc_h264", "h264_nvenc"},
+		{"obs_nvenc_h264_tex", "h264_nvenc"},
 		{"jim_hevc_nvenc", "hevc_nvenc"},
 		{"obs_nvenc_hevc", "hevc_nvenc"},
+		{"obs_nvenc_hevc_tex", "hevc_nvenc"},
 		{"jim_av1_nvenc", "av1_nvenc"},
 		{"obs_nvenc_av1", "av1_nvenc"},
+		{"obs_nvenc_av1_tex", "av1_nvenc"},
 		{"h264_texture_amf", "h264_amf"},
 		{"h265_texture_amf", "hevc_amf"},
 		{"av1_texture_amf", "av1_amf"},
@@ -170,6 +181,29 @@ QIcon makeTrimIcon(bool in)
 	return QIcon(pm);
 }
 
+/* Bring the window in front even when another app (a game) holds focus —
+ * Windows blocks SetForegroundWindow from background processes unless the
+ * calling thread attaches to the foreground thread's input queue. */
+void forceForeground(QWidget *w)
+{
+#ifdef _WIN32
+	HWND hwnd = reinterpret_cast<HWND>(w->winId());
+	HWND fg = GetForegroundWindow();
+	if (fg == hwnd)
+		return;
+	DWORD fgTid = GetWindowThreadProcessId(fg, nullptr);
+	DWORD myTid = GetCurrentThreadId();
+	if (fgTid != myTid)
+		AttachThreadInput(fgTid, myTid, TRUE);
+	SetForegroundWindow(hwnd);
+	BringWindowToTop(hwnd);
+	if (fgTid != myTid)
+		AttachThreadInput(fgTid, myTid, FALSE);
+#else
+	Q_UNUSED(w);
+#endif
+}
+
 QString fallbackEncoder()
 {
 	const auto avail = ExportWorker::availableEncoders();
@@ -219,11 +253,38 @@ ReplayClipEditorDialog::ReplayClipEditorDialog(QWidget *parent) : QDialog(parent
 
 	loadPersistedSettings();
 	updateSettingsModeUi();
+
+	/* Watch clicks anywhere in the dialog so text fields release focus
+	 * when the user clicks elsewhere (they were eating shortcuts). */
+	qApp->installEventFilter(this);
 }
 
 ReplayClipEditorDialog::~ReplayClipEditorDialog()
 {
+	qApp->removeEventFilter(this);
 	shutdown();
+}
+
+bool ReplayClipEditorDialog::eventFilter(QObject *watched, QEvent *event)
+{
+	if (event->type() == QEvent::MouseButtonPress && isVisible()) {
+		QWidget *w = qobject_cast<QWidget *>(watched);
+		if (w && (w == this || isAncestorOf(w))) {
+			/* keep focus while clicking inside a text/number field */
+			bool insideEditable = false;
+			for (QWidget *p = w; p && p != this; p = p->parentWidget()) {
+				if (qobject_cast<QLineEdit *>(p) || qobject_cast<QAbstractSpinBox *>(p)) {
+					insideEditable = true;
+					break;
+				}
+			}
+			QWidget *focus = focusWidget();
+			if (!insideEditable && focus &&
+			    (qobject_cast<QLineEdit *>(focus) || qobject_cast<QAbstractSpinBox *>(focus)))
+				focus->clearFocus();
+		}
+	}
+	return QDialog::eventFilter(watched, event);
 }
 
 void ReplayClipEditorDialog::shutdown()
@@ -233,10 +294,8 @@ void ReplayClipEditorDialog::shutdown()
 		exportWorker->cancel();
 		exportWorker->wait(10000);
 	}
-	if (player) {
-		cleanupTemporaryReplay(); /* closes the file via the player */
+	if (player)
 		player->shutdown();
-	}
 }
 
 /* ---------------------------------------------------------------- browser */
@@ -408,11 +467,12 @@ void ReplayClipEditorDialog::showBrowser()
 	showNormal();
 	raise();
 	activateWindow();
+	forceForeground(this);
 }
 
 void ReplayClipEditorDialog::showSavingReplay()
 {
-	cleanupTemporaryReplay();
+	/* release the working file so a fresh save can replace it */
 	player->closeFile();
 	filmstripGeneration++;
 	timeline->clear();
@@ -426,6 +486,7 @@ void ReplayClipEditorDialog::showSavingReplay()
 	showNormal();
 	raise();
 	activateWindow();
+	forceForeground(this);
 }
 
 void ReplayClipEditorDialog::openClipExternal(const QString &path)
@@ -433,34 +494,18 @@ void ReplayClipEditorDialog::openClipExternal(const QString &path)
 	showNormal();
 	raise();
 	activateWindow();
+	forceForeground(this);
 	openClip(path);
-	if (currentClip.valid && currentClip.path == path)
-		currentClipIsTemporaryReplay = true;
 }
 
 QString ReplayClipEditorDialog::clipDefaultOutputFolder() const
 {
 	QFileInfo fi(currentClip.path);
 	QDir d(fi.absolutePath());
-	if (d.dirName() == QStringLiteral(".replay-clip-editor-temp"))
+	if (d.dirName() == QStringLiteral("ReplayClipEditor") ||
+	    d.dirName() == QStringLiteral(".replay-clip-editor-temp"))
 		d.cdUp();
 	return d.absolutePath();
-}
-
-void ReplayClipEditorDialog::cleanupTemporaryReplay()
-{
-	/* Clip That replays are working copies: deleted whenever the user
-	 * leaves them, exported or not — the trims are what gets kept. */
-	if (currentClipIsTemporaryReplay && !currentClip.path.isEmpty()) {
-		player->closeFile(); /* release file handles first */
-		if (QFile::remove(currentClip.path))
-			blog(LOG_INFO, "[replay-clip-editor] removed temporary replay '%s'",
-			     currentClip.path.toUtf8().constData());
-		else
-			blog(LOG_WARNING, "[replay-clip-editor] could not remove temporary replay '%s'",
-			     currentClip.path.toUtf8().constData());
-	}
-	currentClipIsTemporaryReplay = false;
 }
 
 /* ----------------------------------------------------------------- editor */
@@ -614,18 +659,37 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 	connect(timeline, &TimelineWidget::inPointChanged, this, [this](qint64) {
 		updateTimeLabels();
 		updateSizeEstimate();
+		recordEditChange();
 	});
 	connect(timeline, &TimelineWidget::outPointChanged, this, [this](qint64) {
 		updateTimeLabels();
 		updateSizeEstimate();
+		recordEditChange();
 	});
 	layout->addWidget(timeline);
 
-	/* audio tracks */
+	/* audio tracks + monitor volume */
+	auto *audioRowOuter = new QHBoxLayout;
 	audioTracksRow = new QWidget;
 	auto *tracksLayout = new QHBoxLayout(audioTracksRow);
 	tracksLayout->setContentsMargins(0, 0, 0, 0);
-	layout->addWidget(audioTracksRow);
+	audioRowOuter->addWidget(audioTracksRow, 1);
+
+	auto *volumeIcon = new QLabel;
+	volumeIcon->setPixmap(style()->standardIcon(QStyle::SP_MediaVolume).pixmap(16, 16));
+	volumeIcon->setToolTip(text("ReplayClipEditor.Editor.MonitorVolumeTip"));
+	monitorVolumeSlider = new QSlider(Qt::Horizontal);
+	monitorVolumeSlider->setRange(0, 100);
+	monitorVolumeSlider->setValue(100);
+	monitorVolumeSlider->setFixedWidth(110);
+	monitorVolumeSlider->setToolTip(text("ReplayClipEditor.Editor.MonitorVolumeTip"));
+	monitorVolumeSlider->setFocusPolicy(Qt::NoFocus);
+	connect(monitorVolumeSlider, &QSlider::valueChanged, this,
+		[this](int v) { player->setMonitorVolume((float)v / 100.0f); });
+	connect(monitorVolumeSlider, &QSlider::sliderReleased, this, [this]() { savePersistedSettings(); });
+	audioRowOuter->addWidget(volumeIcon);
+	audioRowOuter->addWidget(monitorVolumeSlider);
+	layout->addLayout(audioRowOuter);
 
 	/* export settings row */
 	auto *settingsRow = new QHBoxLayout;
@@ -633,10 +697,27 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 
 	settingsModeCombo = new QComboBox;
 	settingsModeCombo->addItem(text("ReplayClipEditor.Export.UseObsSettings"), QStringLiteral("obs"));
+	settingsModeCombo->addItem(text("ReplayClipEditor.Export.UseObsStream"), QStringLiteral("obs_stream"));
 	settingsModeCombo->addItem(text("ReplayClipEditor.Export.CustomSettings"), QStringLiteral("custom"));
 	settingsModeCombo->setToolTip(text("ReplayClipEditor.Export.SettingsTip"));
 	connect(settingsModeCombo, &QComboBox::currentIndexChanged, this, [this](int) { updateSettingsModeUi(); });
 	settingsRow->addWidget(settingsModeCombo);
+
+	auto *resLabel = new QLabel(text("ReplayClipEditor.Export.Resolution") + QStringLiteral(":"));
+	resolutionCombo = new QComboBox;
+	resolutionCombo->addItem(text("ReplayClipEditor.Export.ResolutionSource"), 0);
+	resolutionCombo->addItem(QStringLiteral("1440p"), 1440);
+	resolutionCombo->addItem(QStringLiteral("1080p"), 1080);
+	resolutionCombo->addItem(QStringLiteral("720p"), 720);
+	resolutionCombo->addItem(QStringLiteral("480p"), 480);
+	resolutionCombo->setToolTip(text("ReplayClipEditor.Export.ResolutionTip"));
+	connect(resolutionCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+		updateSizeEstimate();
+		savePersistedSettings();
+	});
+	settingsRow->addSpacing(10);
+	settingsRow->addWidget(resLabel);
+	settingsRow->addWidget(resolutionCombo);
 
 	customSettingsRow = new QWidget;
 	auto *customLayout = new QHBoxLayout(customSettingsRow);
@@ -685,14 +766,18 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 	destRow->addWidget(new QLabel(text("ReplayClipEditor.Export.SaveTo") + QStringLiteral(":")));
 	folderEdit = new QLineEdit;
 	folderEdit->setToolTip(text("ReplayClipEditor.Export.SaveToTip"));
+	/* Any change the user makes to the folder is remembered. */
+	connect(folderEdit, &QLineEdit::editingFinished, this, [this]() { onOutputFolderChanged(); });
 	destRow->addWidget(folderEdit, 1);
 	auto *browseBtn = new QPushButton(text("ReplayClipEditor.Export.Browse"));
 	browseBtn->setToolTip(text("ReplayClipEditor.Export.BrowseTip"));
 	connect(browseBtn, &QPushButton::clicked, this, [this]() {
 		QString dir = QFileDialog::getExistingDirectory(this, text("ReplayClipEditor.Export.SaveTo"),
 								folderEdit->text());
-		if (!dir.isEmpty())
+		if (!dir.isEmpty()) {
 			folderEdit->setText(QDir::toNativeSeparators(dir));
+			onOutputFolderChanged();
+		}
 	});
 	destRow->addWidget(browseBtn);
 	destRow->addSpacing(8);
@@ -720,13 +805,13 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 	destRow->addWidget(exportButton);
 	layout->addLayout(destRow);
 
-	/* progress / status */
+	/* progress / status share one row: the bar shows during the render,
+	 * the label + Open Folder replace it when done */
+	auto *statusRow = new QHBoxLayout;
 	progressBar = new QProgressBar;
 	progressBar->setRange(0, 100);
 	progressBar->setVisible(false);
-	layout->addWidget(progressBar); /* full row width */
-
-	auto *statusRow = new QHBoxLayout;
+	statusRow->addWidget(progressBar, 1);
 	exportStatusLabel = new QLabel;
 	openFolderButton = new QPushButton(text("ReplayClipEditor.Export.OpenFolder"));
 	openFolderButton->setVisible(false);
@@ -742,7 +827,6 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 
 void ReplayClipEditorDialog::openClip(const QString &path)
 {
-	cleanupTemporaryReplay();
 	currentClip = VideoProbe::probe(path);
 	if (!currentClip.valid) {
 		exportStatusLabel->setText(text("ReplayClipEditor.Error.OpenFailed"));
@@ -778,6 +862,11 @@ void ReplayClipEditorDialog::openClip(const QString &path)
 	updateTimeLabels();
 	updateSizeEstimate();
 
+	undoStack.clear();
+	redoStack.clear();
+	currentEditState = {0, currentClip.durationMs, enabledTracksMask};
+	lastUndoPushMs = 0;
+
 	player->openFile(path, currentClip.fps, currentClip.durationMs, enabledAudioStreams());
 	loadFilmstrip(path, 0, currentClip.durationMs);
 
@@ -791,7 +880,6 @@ void ReplayClipEditorDialog::backToBrowser()
 		return; /* don't abandon a running export */
 	filmstripGeneration++;
 	player->closeFile();
-	cleanupTemporaryReplay();
 	timeline->clear();
 	stack->setCurrentIndex(0);
 	refreshClipList();
@@ -863,6 +951,7 @@ void ReplayClipEditorDialog::rebuildAudioTrackToggles()
 				updateSizeEstimate();
 				/* The preview mutes/unmutes live. */
 				player->setEnabledTracks(enabledAudioStreams());
+				recordEditChange();
 			});
 			trackChecks.push_back(check);
 			tracksLayout->addWidget(check);
@@ -898,7 +987,16 @@ QString ReplayClipEditorDialog::effectiveContainer() const
 {
 	if (settingsModeCombo->currentData().toString() == QStringLiteral("custom"))
 		return containerCombo->currentText();
-	return deriveObsSettings().container;
+	return currentExportSettings().container;
+}
+
+void ReplayClipEditorDialog::onOutputFolderChanged()
+{
+	/* Persist exactly what the user chose, so it carries to the next
+	 * clip and next session. Empty means "follow the recording folder". */
+	QString folder = QDir::fromNativeSeparators(folderEdit->text().trimmed());
+	persistedOutputFolder = (folder == clipDefaultOutputFolder()) ? QString() : folder;
+	savePersistedSettings();
 }
 
 void ReplayClipEditorDialog::updateExtensionLabel()
@@ -921,8 +1019,7 @@ void ReplayClipEditorDialog::updateSizeEstimate()
 		return;
 	}
 
-	bool useObs = settingsModeCombo->currentData().toString() != QStringLiteral("custom");
-	ExportSettings s = useObs ? deriveObsSettings() : customSettings();
+	ExportSettings s = currentExportSettings();
 
 	double videoBps;
 	if (s.rateControl == QStringLiteral("CBR") || s.rateControl == QStringLiteral("VBR")) {
@@ -936,6 +1033,10 @@ void ReplayClipEditorDialog::updateSizeEstimate()
 		if (s.encoderName.contains(QStringLiteral("hevc")) || s.encoderName.contains(QStringLiteral("av1")))
 			factor *= 0.65;
 		videoBps = srcBps * factor;
+		if (s.scaleHeight > 0 && currentClip.height > s.scaleHeight) {
+			double r = (double)s.scaleHeight / (double)currentClip.height;
+			videoBps *= r * r;
+		}
 	}
 
 	double audioBps = enabledAudioStreams().isEmpty() ? 0.0 : 192000.0;
@@ -943,12 +1044,14 @@ void ReplayClipEditorDialog::updateSizeEstimate()
 	estSizeLabel->setText(QStringLiteral("~%1").arg(humanSize(bytes)));
 }
 
-/* Derive export settings from the user's OBS recording configuration. */
-ExportSettings ReplayClipEditorDialog::deriveObsSettings() const
+/* Derive export settings from the user's OBS recording or streaming config.
+ * Streaming has no container of its own, so the recording container is used
+ * for the output file either way. */
+ExportSettings ReplayClipEditorDialog::deriveObsSettings(bool streaming) const
 {
 	ExportSettings s;
 	s.encoderName = fallbackEncoder();
-	s.rateControl = QStringLiteral("CQP");
+	s.rateControl = streaming ? QStringLiteral("CBR") : QStringLiteral("CQP");
 	s.cq = 20;
 
 	config_t *cfg = obs_frontend_get_profile_config();
@@ -963,28 +1066,29 @@ ExportSettings ReplayClipEditorDialog::deriveObsSettings() const
 		if (fmt)
 			s.container = mapObsFormatToContainer(QString::fromUtf8(fmt));
 
-		const char *enc = config_get_string(cfg, "AdvOut", "RecEncoder");
+		const char *enc = config_get_string(cfg, "AdvOut", streaming ? "Encoder" : "RecEncoder");
 		QString mapped = enc ? mapAdvancedEncoderId(QString::fromUtf8(enc)) : QString();
 		if (!mapped.isEmpty() && encoderAvailable(mapped))
 			s.encoderName = mapped;
 
-		/* The recording encoder's detailed settings live in
+		/* Detailed encoder settings live in streamEncoder.json /
 		 * recordEncoder.json inside the profile folder. */
 		config_t *user = obs_frontend_get_user_config();
 		const char *profileDir = user ? config_get_string(user, "Basic", "ProfileDir") : nullptr;
 		if (profileDir) {
-			QString rel = QStringLiteral("obs-studio/basic/profiles/%1/recordEncoder.json")
-					      .arg(QString::fromUtf8(profileDir));
+			QString rel = QStringLiteral("obs-studio/basic/profiles/%1/%2")
+					      .arg(QString::fromUtf8(profileDir),
+						   streaming ? QStringLiteral("streamEncoder.json")
+							     : QStringLiteral("recordEncoder.json"));
 			char *full = os_get_config_path_ptr(rel.toUtf8().constData());
 			obs_data_t *encData = full ? obs_data_create_from_json_file(full) : nullptr;
 			bfree(full);
 			if (encData) {
 				const char *rc = obs_data_get_string(encData, "rate_control");
 				QString rcs = QString::fromUtf8(rc ? rc : "");
-				if (rcs == QStringLiteral("CBR") || rcs == QStringLiteral("VBR"))
+				if (rcs == QStringLiteral("CBR") || rcs == QStringLiteral("VBR") ||
+				    rcs == QStringLiteral("CQP"))
 					s.rateControl = rcs;
-				else
-					s.rateControl = QStringLiteral("CQP");
 
 				long long bitrate = obs_data_get_int(encData, "bitrate");
 				if (bitrate > 0)
@@ -1005,26 +1109,42 @@ ExportSettings ReplayClipEditorDialog::deriveObsSettings() const
 		if (fmt)
 			s.container = mapObsFormatToContainer(QString::fromUtf8(fmt));
 
-		const char *enc = config_get_string(cfg, "SimpleOutput", "RecEncoder");
+		const char *enc =
+			config_get_string(cfg, "SimpleOutput", streaming ? "StreamEncoder" : "RecEncoder");
 		QString mapped = enc ? mapSimpleEncoderId(QString::fromUtf8(enc)) : QString();
 		if (!mapped.isEmpty() && encoderAvailable(mapped))
 			s.encoderName = mapped;
 
-		const char *quality = config_get_string(cfg, "SimpleOutput", "RecQuality");
-		QString q = QString::fromUtf8(quality ? quality : "");
-		if (q == QStringLiteral("Stream")) {
+		if (streaming) {
 			s.rateControl = QStringLiteral("CBR");
 			long long vbitrate = config_get_int(cfg, "SimpleOutput", "VBitrate");
 			s.bitrateKbps = vbitrate > 0 ? (int)vbitrate : 6000;
-		} else if (q == QStringLiteral("Small")) {
-			s.cq = 23;
-		} else if (q == QStringLiteral("HQ")) {
-			s.cq = 16;
-		} else if (q == QStringLiteral("Lossless")) {
-			s.cq = 10;
+		} else {
+			const char *quality = config_get_string(cfg, "SimpleOutput", "RecQuality");
+			QString q = QString::fromUtf8(quality ? quality : "");
+			if (q == QStringLiteral("Stream")) {
+				s.rateControl = QStringLiteral("CBR");
+				long long vbitrate = config_get_int(cfg, "SimpleOutput", "VBitrate");
+				s.bitrateKbps = vbitrate > 0 ? (int)vbitrate : 6000;
+			} else if (q == QStringLiteral("Small")) {
+				s.cq = 23;
+			} else if (q == QStringLiteral("HQ")) {
+				s.cq = 16;
+			} else if (q == QStringLiteral("Lossless")) {
+				s.cq = 10;
+			}
 		}
 	}
 
+	return s;
+}
+
+ExportSettings ReplayClipEditorDialog::currentExportSettings() const
+{
+	QString mode = settingsModeCombo->currentData().toString();
+	ExportSettings s = mode == QStringLiteral("custom") ? customSettings()
+							    : deriveObsSettings(mode == QStringLiteral("obs_stream"));
+	s.scaleHeight = resolutionCombo->currentData().toInt();
 	return s;
 }
 
@@ -1076,8 +1196,7 @@ void ReplayClipEditorDialog::startExport()
 
 	player->pause();
 
-	bool useObs = settingsModeCombo->currentData().toString() != QStringLiteral("custom");
-	ExportSettings s = useObs ? deriveObsSettings() : customSettings();
+	ExportSettings s = currentExportSettings();
 	if (s.encoderName.isEmpty()) {
 		exportStatusLabel->setText(text("ReplayClipEditor.Error.NoEncoder"));
 		return;
@@ -1091,7 +1210,31 @@ void ReplayClipEditorDialog::startExport()
 	}
 	savePersistedSettings();
 
-	QString outPath = buildOutputPath();
+	/* Same-name collision: ask instead of silently numbering. */
+	QString name = nameEdit->text().trimmed();
+	if (name.isEmpty())
+		name = QFileInfo(currentClip.path).completeBaseName() + QStringLiteral("_clip");
+	QString exactPath = folder + QStringLiteral("/") + name + QStringLiteral(".") + effectiveContainer();
+	QString outPath = exactPath;
+	if (QFileInfo::exists(exactPath)) {
+		QMessageBox box(this);
+		box.setIcon(QMessageBox::Warning);
+		box.setWindowTitle(text("ReplayClipEditor.Overwrite.Title"));
+		box.setText(text("ReplayClipEditor.Overwrite.Text").arg(QFileInfo(exactPath).fileName()));
+		QPushButton *numbered = box.addButton(text("ReplayClipEditor.Overwrite.Numbered"),
+						      QMessageBox::AcceptRole);
+		QPushButton *replace = box.addButton(text("ReplayClipEditor.Overwrite.Replace"),
+						     QMessageBox::DestructiveRole);
+		box.addButton(QMessageBox::Cancel);
+		box.setDefaultButton(numbered);
+		box.exec();
+		if (box.clickedButton() == numbered)
+			outPath = buildOutputPath(); /* auto-numbered variant */
+		else if (box.clickedButton() == replace)
+			outPath = exactPath;
+		else
+			return;
+	}
 
 	exportWorker = new ExportWorker(currentClip.path, outPath, timeline->inPointMs(), timeline->outPointMs(),
 					enabledAudioStreams(), s, this);
@@ -1150,8 +1293,11 @@ void ReplayClipEditorDialog::loadPersistedSettings()
 	/* Encoder list isn't populated yet; remember the preference. */
 	encoderCombo->setProperty("preferredEncoder", QString::fromUtf8(obs_data_get_string(data, "encoder")));
 	const char *mode = obs_data_get_string(data, "settings_mode");
-	if (mode && strcmp(mode, "custom") == 0)
-		settingsModeCombo->setCurrentIndex(settingsModeCombo->findData(QStringLiteral("custom")));
+	if (mode && *mode) {
+		int idx = settingsModeCombo->findData(QString::fromUtf8(mode));
+		if (idx >= 0)
+			settingsModeCombo->setCurrentIndex(idx);
+	}
 	const char *rc = obs_data_get_string(data, "rate_control");
 	if (rc && *rc)
 		rateControlCombo->setCurrentText(QString::fromUtf8(rc));
@@ -1176,6 +1322,15 @@ void ReplayClipEditorDialog::loadPersistedSettings()
 		if (idx >= 0)
 			previewQualityCombo->setCurrentIndex(idx);
 	}
+	if (obs_data_has_user_value(data, "scale_height")) {
+		resolutionCombo->blockSignals(true);
+		int idx = resolutionCombo->findData((int)obs_data_get_int(data, "scale_height"));
+		if (idx >= 0)
+			resolutionCombo->setCurrentIndex(idx);
+		resolutionCombo->blockSignals(false);
+	}
+	if (obs_data_has_user_value(data, "monitor_volume"))
+		monitorVolumeSlider->setValue((int)obs_data_get_int(data, "monitor_volume"));
 	obs_data_release(data);
 }
 
@@ -1185,16 +1340,6 @@ void ReplayClipEditorDialog::savePersistedSettings()
 	if (dir) {
 		os_mkdirs(dir);
 		bfree(dir);
-	}
-
-	/* Remember a custom output folder only when it differs from the
-	 * clip's own folder (which is the per-clip default). */
-	if (currentClip.valid) {
-		QString folder = QDir::fromNativeSeparators(folderEdit->text().trimmed());
-		if (folder == clipDefaultOutputFolder())
-			persistedOutputFolder.clear();
-		else
-			persistedOutputFolder = folder;
 	}
 
 	obs_data_t *data = obs_data_create();
@@ -1210,8 +1355,45 @@ void ReplayClipEditorDialog::savePersistedSettings()
 	obs_data_set_bool(data, "auto_start_replay_buffer", autoStartCheck->isChecked());
 	obs_data_set_int(data, "enabled_tracks_mask", enabledTracksMask);
 	obs_data_set_int(data, "preview_quality", previewQualityCombo->currentData().toInt());
+	obs_data_set_int(data, "scale_height", resolutionCombo->currentData().toInt());
+	obs_data_set_int(data, "monitor_volume", monitorVolumeSlider->value());
 	obs_data_save_json(data, settingsFilePath().toUtf8().constData());
 	obs_data_release(data);
+}
+
+/* -------------------------------------------------------------- undo/redo */
+
+void ReplayClipEditorDialog::recordEditChange()
+{
+	if (restoringEditState || !currentClip.valid)
+		return;
+	qint64 now = QDateTime::currentMSecsSinceEpoch();
+	/* Coalesce bursts (handle drags emit continuously): only the state
+	 * before the burst is pushed. */
+	if (now - lastUndoPushMs > 600) {
+		undoStack.push_back(currentEditState);
+		if (undoStack.size() > 100)
+			undoStack.pop_front();
+		redoStack.clear();
+	}
+	lastUndoPushMs = now;
+	currentEditState = {timeline->inPointMs(), timeline->outPointMs(), enabledTracksMask};
+}
+
+void ReplayClipEditorDialog::applyEditState(const EditState &s)
+{
+	restoringEditState = true;
+	timeline->setOutPoint(s.outMs);
+	timeline->setInPoint(s.inMs);
+	timeline->setOutPoint(s.outMs); /* re-apply in case clamping moved it */
+	enabledTracksMask = s.tracksMask;
+	for (int i = 0; i < trackChecks.size(); i++)
+		trackChecks[i]->setChecked(s.tracksMask & (1 << i));
+	player->setEnabledTracks(enabledAudioStreams());
+	updateTimeLabels();
+	updateSizeEstimate();
+	currentEditState = s;
+	restoringEditState = false;
 }
 
 /* ------------------------------------------------------------------ misc */
@@ -1236,6 +1418,24 @@ void ReplayClipEditorDialog::keyPressEvent(QKeyEvent *event)
 	if (qobject_cast<QLineEdit *>(focus) || qobject_cast<QAbstractSpinBox *>(focus)) {
 		QDialog::keyPressEvent(event);
 		return;
+	}
+
+	if (event->modifiers() & Qt::ControlModifier) {
+		bool shift = event->modifiers() & Qt::ShiftModifier;
+		if (event->key() == Qt::Key_Z && !shift) {
+			if (!undoStack.isEmpty()) {
+				redoStack.push_back(currentEditState);
+				applyEditState(undoStack.takeLast());
+			}
+			return;
+		}
+		if (event->key() == Qt::Key_Y || (event->key() == Qt::Key_Z && shift)) {
+			if (!redoStack.isEmpty()) {
+				undoStack.push_back(currentEditState);
+				applyEditState(redoStack.takeLast());
+			}
+			return;
+		}
 	}
 
 	switch (event->key()) {
@@ -1284,7 +1484,6 @@ void ReplayClipEditorDialog::closeEvent(QCloseEvent *event)
 	}
 	filmstripGeneration++;
 	player->closeFile();
-	cleanupTemporaryReplay();
 	timeline->clear();
 	QDialog::closeEvent(event);
 }

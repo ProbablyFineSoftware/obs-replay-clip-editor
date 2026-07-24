@@ -26,6 +26,7 @@ class QComboBox;
 class QSpinBox;
 class QProgressBar;
 class QCheckBox;
+class QSlider;
 
 class PreviewPlayer;
 class TimelineWidget;
@@ -54,6 +55,8 @@ public:
 protected:
 	void keyPressEvent(QKeyEvent *event) override;
 	void closeEvent(QCloseEvent *event) override;
+	/* clicking outside a text field releases its keyboard focus */
+	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
 	void refreshClipList();
@@ -74,13 +77,16 @@ private:
 	void updateExtensionLabel();
 	void updateSizeEstimate();
 	QString effectiveContainer() const;
-	ExportSettings deriveObsSettings() const;
+	/* streaming = true derives from the OBS streaming encoder, false from
+	 * the recording encoder. */
+	ExportSettings deriveObsSettings(bool streaming) const;
 	ExportSettings customSettings() const;
+	/* Settings implied by the current Encoding mode combo. */
+	ExportSettings currentExportSettings() const;
+	void onOutputFolderChanged();
 	QString buildOutputPath() const;
 	QVector<int> enabledAudioStreams() const;
 	void seekKeepingState(qint64 ms);
-	/* Delete a Clip That replay once a trim has been exported from it. */
-	void cleanupTemporaryReplay();
 	/* The clip's folder, except for temp replays where it is the real
 	 * clips folder (the temp dir's parent) — exports must never land in
 	 * the purged temp dir. */
@@ -110,8 +116,11 @@ private:
 	QWidget *audioTracksRow = nullptr;
 	QVector<QCheckBox *> trackChecks;
 
+	QSlider *monitorVolumeSlider = nullptr;
+
 	/* export controls */
 	QComboBox *settingsModeCombo = nullptr;
+	QComboBox *resolutionCombo = nullptr;
 	QWidget *customSettingsRow = nullptr;
 	QComboBox *encoderCombo = nullptr;
 	QComboBox *rateControlCombo = nullptr;
@@ -129,8 +138,21 @@ private:
 	QPushButton *openFolderButton = nullptr;
 
 	ClipInfo currentClip;
-	bool currentClipIsTemporaryReplay = false;
 	QTimer *viewDebounce = nullptr;
+
+	/* undo/redo for trim points and track selection */
+	struct EditState {
+		qint64 inMs = 0;
+		qint64 outMs = 0;
+		int tracksMask = ~0;
+	};
+	void recordEditChange();
+	void applyEditState(const EditState &s);
+	QVector<EditState> undoStack;
+	QVector<EditState> redoStack;
+	EditState currentEditState;
+	bool restoringEditState = false;
+	qint64 lastUndoPushMs = 0;
 	QPointer<ExportWorker> exportWorker;
 	std::atomic<int> filmstripGeneration{0};
 	bool encodersLoaded = false;

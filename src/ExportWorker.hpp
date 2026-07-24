@@ -19,6 +19,7 @@ struct ExportSettings {
 	int bitrateKbps = 16000;
 	int cq = 23;
 	QString container = QStringLiteral("mp4"); /* mp4 | mkv | mov */
+	int scaleHeight = 0;                       /* 0 = source resolution */
 };
 
 struct EncoderChoice {
