@@ -705,11 +705,7 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 
 	auto *resLabel = new QLabel(text("ReplayClipEditor.Export.Resolution") + QStringLiteral(":"));
 	resolutionCombo = new QComboBox;
-	resolutionCombo->addItem(text("ReplayClipEditor.Export.ResolutionSource"), 0);
-	resolutionCombo->addItem(QStringLiteral("1440p"), 1440);
-	resolutionCombo->addItem(QStringLiteral("1080p"), 1080);
-	resolutionCombo->addItem(QStringLiteral("720p"), 720);
-	resolutionCombo->addItem(QStringLiteral("480p"), 480);
+	rebuildResolutionOptions();
 	resolutionCombo->setToolTip(text("ReplayClipEditor.Export.ResolutionTip"));
 	connect(resolutionCombo, &QComboBox::currentIndexChanged, this, [this](int) {
 		updateSizeEstimate();
@@ -858,6 +854,7 @@ void ReplayClipEditorDialog::openClip(const QString &path)
 	updateExtensionLabel();
 
 	timeline->setDuration(currentClip.durationMs);
+	rebuildResolutionOptions();
 	rebuildAudioTrackToggles();
 	updateTimeLabels();
 	updateSizeEstimate();
@@ -915,6 +912,38 @@ void ReplayClipEditorDialog::loadFilmstrip(const QString &path, qint64 startMs, 
 			},
 			Qt::QueuedConnection);
 	});
+}
+
+void ReplayClipEditorDialog::rebuildResolutionOptions()
+{
+	if (!resolutionCombo)
+		return;
+
+	/* Standard downscale rungs, tallest first. */
+	static const struct {
+		const char *label;
+		int height;
+	} kRungs[] = {
+		{"2160p (4K)", 2160}, {"1440p", 1440}, {"1080p", 1080}, {"720p", 720}, {"480p", 480},
+	};
+
+	int prevHeight = resolutionCombo->currentData().toInt();
+	int srcHeight = currentClip.height;
+
+	resolutionCombo->blockSignals(true);
+	resolutionCombo->clear();
+	resolutionCombo->addItem(text("ReplayClipEditor.Export.ResolutionSource"), 0);
+	/* Only offer rungs strictly below the source — upscaling a replay only
+	 * inflates the file without adding detail. With no known source height
+	 * (combo built before a clip loads) offer them all. */
+	for (const auto &r : kRungs) {
+		if (srcHeight <= 0 || r.height < srcHeight)
+			resolutionCombo->addItem(QString::fromUtf8(r.label), r.height);
+	}
+
+	int idx = resolutionCombo->findData(prevHeight);
+	resolutionCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+	resolutionCombo->blockSignals(false);
 }
 
 void ReplayClipEditorDialog::rebuildAudioTrackToggles()

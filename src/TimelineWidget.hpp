@@ -61,10 +61,14 @@ protected:
 	void resizeEvent(QResizeEvent *event) override;
 
 private:
-	enum class Drag { None, InHandle, OutHandle, Scrub, Pan };
+	enum class Drag { None, InHandle, OutHandle, Scrub, Pan, Minimap };
 
 	QRectF stripRect() const;
 	QRectF rulerRect() const;
+	/* Bottom band holding the zoom indicator; grabbing it pans the view. */
+	QRectF minimapBandRect() const;
+	/* Map an x in the minimap band to a time over the full duration. */
+	qint64 minimapXToMs(qreal x) const;
 	qint64 xToMs(qreal x) const;
 	qreal msToX(qint64 ms) const;
 	qint64 minViewSpan() const;
@@ -85,4 +89,7 @@ private:
 	bool filmstripLoading = false;
 	Drag dragging = Drag::None;
 	qreal panLastX = 0;
+	/* while dragging the minimap thumb, the grabbed point's offset from
+	 * viewStart (keeps the thumb under the cursor) */
+	qint64 minimapGrabMs = 0;
 };

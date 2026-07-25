@@ -189,7 +189,7 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 			QFileInfo fi(path);
 			QString workDir = fi.absolutePath() + QStringLiteral("/") + QString::fromUtf8(kWorkDirName);
 			if (QDir().mkpath(workDir)) {
-				QString workPath = workDir + QStringLiteral("/Last Replay.") + fi.suffix();
+				QString workPath = workDir + QStringLiteral("/Replay.") + fi.suffix();
 				if (QFile::exists(workPath))
 					QFile::remove(workPath);
 				if (QFile::rename(path, workPath))

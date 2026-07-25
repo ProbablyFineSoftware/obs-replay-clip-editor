@@ -118,8 +118,24 @@ QRectF TimelineWidget::rulerRect() const
 
 QRectF TimelineWidget::stripRect() const
 {
+	/* leave a taller gap at the bottom for the draggable zoom band */
 	return QRectF(kHandleWidth, kRulerHeight + 4.0, width() - 2.0 * kHandleWidth,
-		      height() - kRulerHeight - 10.0);
+		      height() - kRulerHeight - 15.0);
+}
+
+QRectF TimelineWidget::minimapBandRect() const
+{
+	QRectF strip = stripRect();
+	return QRectF(strip.left(), strip.bottom() + 1.0, strip.width(), height() - strip.bottom() - 1.0);
+}
+
+qint64 TimelineWidget::minimapXToMs(qreal x) const
+{
+	QRectF r = stripRect();
+	if (r.width() <= 0)
+		return 0;
+	qreal t = (x - r.left()) / r.width();
+	return std::clamp<qint64>((qint64)(t * (qreal)durationMs), 0, durationMs);
 }
 
 qint64 TimelineWidget::xToMs(qreal x) const
@@ -195,6 +211,14 @@ TimelineWidget::Drag TimelineWidget::hitTest(const QPointF &pos) const
 
 void TimelineWidget::updateCursor(const QPointF &pos)
 {
+	if (dragging == Drag::Minimap) {
+		setCursor(Qt::ClosedHandCursor);
+		return;
+	}
+	if (dragging == Drag::None && viewEnd - viewStart < durationMs && minimapBandRect().contains(pos)) {
+		setCursor(Qt::OpenHandCursor);
+		return;
+	}
 	Drag hit = dragging != Drag::None ? dragging : hitTest(pos);
 	switch (hit) {
 	case Drag::InHandle:
@@ -225,6 +249,32 @@ void TimelineWidget::mousePressEvent(QMouseEvent *event)
 	}
 	if (event->button() != Qt::LeftButton)
 		return;
+
+	/* Zoom band: grab the thumb to pan, or click the track to jump there.
+	 * Only active while zoomed in (otherwise the thumb fills the bar). */
+	bool zoomed = viewEnd - viewStart < durationMs;
+	if (zoomed && minimapBandRect().contains(event->position())) {
+		dragging = Drag::Minimap;
+		qint64 span = viewEnd - viewStart;
+		qreal x = event->position().x();
+		QRectF strip = stripRect();
+		qreal a = strip.left() + strip.width() * (qreal)viewStart / (qreal)durationMs;
+		qreal b = strip.left() + strip.width() * (qreal)viewEnd / (qreal)durationMs;
+		if (x < a || x > b) {
+			/* clicked off the thumb — center the view on the click */
+			qint64 target = minimapXToMs(x) - span / 2;
+			viewStart = std::clamp<qint64>(target, 0, durationMs - span);
+			viewEnd = viewStart + span;
+			filmstrip.clear();
+			filmstripLoading = true;
+			emit viewChanged(viewStart, viewEnd);
+			update();
+		}
+		minimapGrabMs = minimapXToMs(x) - viewStart;
+		updateCursor(event->position());
+		return;
+	}
+
 	dragging = hitTest(event->position());
 	if (dragging == Drag::InHandle) {
 		setInPoint(xToMs(event->position().x()));
@@ -265,6 +315,20 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *event)
 		panBy((qint64)(-dx * (qreal)span / std::max(stripRect().width(), 1.0)));
 		if (viewStart != oldStart) {
 			/* stale tiles look wrong while the view moves */
+			filmstrip.clear();
+			filmstripLoading = true;
+			emit viewChanged(viewStart, viewEnd);
+		}
+		update();
+		break;
+	}
+	case Drag::Minimap: {
+		qint64 span = viewEnd - viewStart;
+		qint64 oldStart = viewStart;
+		qint64 target = minimapXToMs(x) - minimapGrabMs;
+		viewStart = std::clamp<qint64>(target, 0, durationMs - span);
+		viewEnd = viewStart + span;
+		if (viewStart != oldStart) {
 			filmstrip.clear();
 			filmstripLoading = true;
 			emit viewChanged(viewStart, viewEnd);
@@ -459,15 +523,18 @@ void TimelineWidget::paintEvent(QPaintEvent *)
 		p.drawPolygon(cap);
 	}
 
-	/* Zoom indicator: thin bar showing the visible window */
+	/* Zoom indicator: draggable thumb showing the visible window */
 	if (viewEnd - viewStart < durationMs) {
-		qreal barY = height() - 4.0;
+		QRectF band = minimapBandRect();
+		qreal barH = 5.0;
+		qreal barY = band.center().y() - barH / 2.0;
 		p.setPen(Qt::NoPen);
-		p.setBrush(QColor(60, 60, 70));
-		p.drawRoundedRect(QRectF(strip.left(), barY, strip.width(), 3), 1.5, 1.5);
+		p.setBrush(QColor(50, 50, 58));
+		p.drawRoundedRect(QRectF(strip.left(), barY, strip.width(), barH), barH / 2.0, barH / 2.0);
 		qreal a = strip.left() + strip.width() * (qreal)viewStart / (qreal)durationMs;
 		qreal b = strip.left() + strip.width() * (qreal)viewEnd / (qreal)durationMs;
-		p.setBrush(QColor(120, 160, 220));
-		p.drawRoundedRect(QRectF(a, barY, std::max(b - a, 6.0), 3), 1.5, 1.5);
+		bool active = dragging == Drag::Minimap;
+		p.setBrush(active ? QColor(150, 190, 245) : QColor(120, 160, 220));
+		p.drawRoundedRect(QRectF(a, barY, std::max(b - a, 8.0), barH), barH / 2.0, barH / 2.0);
 	}
 }

@@ -72,6 +72,9 @@ private:
 	QString effectiveBrowseFolder() const;
 	void loadFilmstrip(const QString &path, qint64 startMs, qint64 endMs);
 	void rebuildAudioTrackToggles();
+	/* Populate the downscale list with only heights <= the source height.
+	 * Preserves the current selection when still valid. */
+	void rebuildResolutionOptions();
 	void updateTimeLabels();
 	void updateSettingsModeUi();
 	void updateExtensionLabel();
