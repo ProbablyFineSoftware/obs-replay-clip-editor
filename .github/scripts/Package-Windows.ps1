@@ -67,6 +67,33 @@ function Package {
     }
     Compress-Archive -Force @CompressArgs
     Log-Group
+
+    Log-Group "Building installer for ${ProductName}..."
+    $Iscc = Get-Command 'iscc.exe' -ErrorAction SilentlyContinue
+
+    if ( $Iscc ) {
+        $IsccPath = $Iscc.Source
+    } else {
+        $IsccPath = "${Env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+    }
+
+    if ( Test-Path -Path $IsccPath ) {
+        $IssFile = "${ProjectRoot}/cmake/windows/resources/installer.iss"
+
+        & "${IsccPath}" `
+            "/DAppVersion=${ProductVersion}" `
+            "/DSourceDir=${ProjectRoot}\release\${Configuration}" `
+            "/DOutputDir=${ProjectRoot}\release" `
+            "/DOutputBaseFilename=${OutputName}" `
+            "${IssFile}"
+
+        if ( $LASTEXITCODE -ne 0 ) {
+            throw "Inno Setup (ISCC.exe) failed with exit code ${LASTEXITCODE}."
+        }
+    } else {
+        Write-Warning "Inno Setup (ISCC.exe) not found at '${IsccPath}'; skipping installer build. Install Inno Setup 6 to build a Windows installer."
+    }
+    Log-Group
 }
 
 Package
