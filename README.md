@@ -1,19 +1,19 @@
 # Replay Clip Editor for OBS Studio
 
-A Steam-style replay trimmer built into OBS Studio. Grab what just happened, trim
-it on a zoomable filmstrip timeline, pick which audio tracks to keep, and export a
-clean clip — without leaving OBS or opening a separate video editor.
+A replay trimmer inspired by Steam's Game Recording, now built into OBS Studio.
+Grab what just happened, trim it down on a zoomable filmstrip timeline, pick which
+audio tracks to keep, and export a clean clip without ever needing to leave OBS or
+open a separate video editor.
 
 > **Status:** v1.0.0 · Works with OBS Studio **31.x and 32.x** on Windows.
 > (macOS and Linux build from source via the same CMake project; see below.)
 
-<!-- TODO: add a screenshot or short GIF of the editor here before publishing.
-     e.g. ![Replay Clip Editor](docs/screenshot.png) -->
+![The Replay Clip Editor trim window, showing the filmstrip timeline with in/out trim handles, per-track audio toggles, and export settings.](docs/screenshot.png)
 
 ## Features
 
-- **Clip That** — one hotkey saves the replay buffer and drops the result straight
-  into the editor, ready to trim.
+- **One-key capture** — a single hotkey saves the replay buffer and drops the
+  result straight into the editor, ready to trim.
 - **Clip browser** — browse and reopen any recording in your OBS recording folder
   (or point it at a different folder).
 - **Frame-accurate trimming** — a custom FFmpeg preview engine with frame-by-frame
@@ -25,9 +25,10 @@ clean clip — without leaving OBS or opening a separate video editor.
 - **Flexible export** — reuse your **OBS Recording** or **OBS Streaming** encoder
   settings for a one-click match, or go **Custom** (encoder, rate control,
   bitrate/CQ, container).
-- **Smart downscaling** — export at source resolution or downscale up to 4K, with
-  only resolutions **at or below the source** offered so you never upscale.
-- **Size estimate** and an overwrite prompt (replace, or auto-number the file).
+- **Smart downscaling** — export at source resolution or downscale to a standard
+  resolution, never above the source (so clips are never upscaled).
+- **Live size estimate** — see the approximate output file size before exporting,
+  updated as you change encoder and resolution settings.
 
 ## Installation
 
@@ -35,7 +36,7 @@ clean clip — without leaving OBS or opening a separate video editor.
 
 1. Download the latest release from the
    [Releases page](https://github.com/ProbablyFineSoftware/obs-replay-clip-editor/releases).
-2. **Close OBS Studio completely.**
+2. **Make sure OBS Studio is closed completely.**
 3. Use either package:
    - **Installer (`.exe`)** — run it and it places the files for you, **or**
    - **Portable (`.zip`)** — unzip it over your OBS Studio install folder
@@ -57,10 +58,10 @@ Otherwise, build from source (below).
 
 - **Open Clip Browser** (menu or hotkey) — see your replays, double-click one to
   edit.
-- **Open Clip Editor / Clip That** (menu or hotkey) — save the replay buffer *right
+- **Open Clip Editor** (menu or hotkey) — save the replay buffer *right
   now* and jump straight into trimming.
   - The replay buffer must be enabled in **Settings → Output → Replay Buffer**.
-    Tick **Start replay buffer with OBS** in the browser to have it always ready.
+    Tick **Start replay buffer with OBS** in the browser to have it always ready whenever you launch OBS.
 
 Both actions have configurable hotkeys under **Settings → Hotkeys**
 ("Open Clip Browser" and "Open Clip Editor").
