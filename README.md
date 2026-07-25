@@ -36,9 +36,14 @@ tracks to keep, and export a clean clip without leaving OBS.
 1. Download `obs-replay-clip-editor-<version>-windows-x64.zip` from the
    [Releases page](https://github.com/ProbablyFineSoftware/obs-replay-clip-editor/releases).
 2. Close OBS Studio completely.
-3. Unzip it over your OBS Studio install folder (typically
-   `C:\Program Files\obs-studio`), merging the `obs-plugins` and `data` folders.
-4. Start OBS. Replay Clip Editor appears in the menu bar.
+3. In File Explorer, open `C:\ProgramData\obs-studio\plugins\`. The easiest way is
+   to paste that path into the address bar, since `ProgramData` is hidden by
+   default. If the `plugins` folder is not there, create it.
+4. Open the downloaded `.zip` and copy the `obs-replay-clip-editor` folder from
+   inside it into that `plugins` folder. When you are done, the plugin file should
+   be at
+   `C:\ProgramData\obs-studio\plugins\obs-replay-clip-editor\bin\64bit\obs-replay-clip-editor.dll`.
+5. Start OBS. Replay Clip Editor appears in the menu bar.
 
 The release is a portable `.zip`, with no installer. The binaries are not
 code-signed, so if Windows SmartScreen or your antivirus flags the download,
