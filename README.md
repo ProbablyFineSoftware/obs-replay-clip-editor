@@ -94,11 +94,14 @@ Both are on the roadmap. The CI jobs for them already exist but are turned off
 (`if: false` in `.github/workflows/build-project.yaml`) until that code is written
 and tested on real hardware.
 
-## Releasing
+## How this was built
 
-Pushing a semantic-version tag (for example `1.0.0`) to `master` triggers the
-GitHub Actions pipeline, which builds the plugin and drafts a GitHub Release with
-the Windows package attached.
+For full disclosure, this plugin was vibe-coded. The entirety of the code was written by
+Claude, working from my direction. I designed the feature set and the way the editor behaves, reviewed
+the changes, and tested every build manually, but I did not hand-write any of the code here.
+
+I'm putting this up front so anyone using, auditing, or contributing to the plugin
+knows exactly how it was made and can weigh that for themselves.
 
 ## License
 
