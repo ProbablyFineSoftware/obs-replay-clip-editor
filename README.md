@@ -33,21 +33,30 @@ tracks to keep, and export a clean clip without leaving OBS.
 
 ### Windows
 
-1. Download `obs-replay-clip-editor-<version>-windows-x64.zip` from the
+**Installer (recommended)**
+
+1. Download `obs-replay-clip-editor-<version>-windows-x64.exe` from the
    [Releases page](https://github.com/ProbablyFineSoftware/obs-replay-clip-editor/releases).
 2. Close OBS Studio completely.
-3. In File Explorer, open `C:\ProgramData\obs-studio\plugins\`. The easiest way is
-   to paste that path into the address bar, since `ProgramData` is hidden by
-   default. If the `plugins` folder is not there, create it.
-4. Open the downloaded `.zip` and copy the `obs-replay-clip-editor` folder from
-   inside it into that `plugins` folder. When you are done, the plugin file should
-   be at
+3. Run the installer and follow the prompts. It asks for administrator rights so it
+   can place the plugin in OBS's plugin folder. The build is not code-signed, so if
+   Windows SmartScreen warns about an unknown publisher, click "More info" and then
+   "Run anyway".
+4. Start OBS. Replay Clip Editor appears in the menu bar.
+
+To remove it later, use "Add or remove programs" in Windows Settings.
+
+**Portable zip (no installer)**
+
+1. Download `obs-replay-clip-editor-<version>-windows-x64.zip` instead.
+2. Close OBS Studio completely.
+3. In File Explorer, open `C:\ProgramData\obs-studio\plugins\`. Paste that path into
+   the address bar, since `ProgramData` is hidden by default. Create the `plugins`
+   folder if it is not there.
+4. Copy the `obs-replay-clip-editor` folder from inside the zip into that `plugins`
+   folder. The plugin file should end up at
    `C:\ProgramData\obs-studio\plugins\obs-replay-clip-editor\bin\64bit\obs-replay-clip-editor.dll`.
 5. Start OBS. Replay Clip Editor appears in the menu bar.
-
-The release is a portable `.zip`, with no installer. The binaries are not
-code-signed, so if Windows SmartScreen or your antivirus flags the download,
-choose Keep or allow.
 
 ### macOS / Linux
 
