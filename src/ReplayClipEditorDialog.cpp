@@ -138,15 +138,9 @@ QString mapSimpleEncoderId(const QString &id)
 		const char *obs;
 		const char *ffmpeg;
 	} map[] = {
-		{"x264", "libx264"},
-		{"x264_lowcpu", "libx264"},
-		{"nvenc", "h264_nvenc"},
-		{"nvenc_hevc", "hevc_nvenc"},
-		{"nvenc_av1", "av1_nvenc"},
-		{"amd", "h264_amf"},
-		{"amd_hevc", "hevc_amf"},
-		{"amd_av1", "av1_amf"},
-		{"qsv", "h264_qsv"},
+		{"x264", "libx264"},          {"x264_lowcpu", "libx264"}, {"nvenc", "h264_nvenc"},
+		{"nvenc_hevc", "hevc_nvenc"}, {"nvenc_av1", "av1_nvenc"}, {"amd", "h264_amf"},
+		{"amd_hevc", "hevc_amf"},     {"amd_av1", "av1_amf"},     {"qsv", "h264_qsv"},
 		{"qsv_av1", "av1_qsv"},
 	};
 	for (const auto &m : map) {
@@ -246,8 +240,8 @@ ReplayClipEditorDialog::ReplayClipEditorDialog(QWidget *parent) : QDialog(parent
 	 * shortcuts always control playback; text fields keep focus so
 	 * typing still works. */
 	for (QWidget *w : stack->findChildren<QWidget *>()) {
-		if (qobject_cast<QPushButton *>(w) || qobject_cast<QToolButton *>(w) ||
-		    qobject_cast<QCheckBox *>(w) || qobject_cast<QComboBox *>(w))
+		if (qobject_cast<QPushButton *>(w) || qobject_cast<QToolButton *>(w) || qobject_cast<QCheckBox *>(w) ||
+		    qobject_cast<QComboBox *>(w))
 			w->setFocusPolicy(Qt::NoFocus);
 	}
 
@@ -598,12 +592,12 @@ QWidget *ReplayClipEditorDialog::buildEditorPage()
 	setInBtn->setIcon(makeTrimIcon(true));
 	setInBtn->setToolTip(text("ReplayClipEditor.Editor.SetInTip"));
 	setInBtn->setFixedSize(32, 32);
-	connect(setInBtn, &QToolButton::clicked, this, [this]() { timeline->setInPoint(player->currentMs()); });
+	connect(setInBtn, &QToolButton::clicked, this, [this]() { timeline->placeInPoint(player->currentMs()); });
 	auto *setOutBtn = new QToolButton;
 	setOutBtn->setIcon(makeTrimIcon(false));
 	setOutBtn->setToolTip(text("ReplayClipEditor.Editor.SetOutTip"));
 	setOutBtn->setFixedSize(32, 32);
-	connect(setOutBtn, &QToolButton::clicked, this, [this]() { timeline->setOutPoint(player->currentMs()); });
+	connect(setOutBtn, &QToolButton::clicked, this, [this]() { timeline->placeOutPoint(player->currentMs()); });
 
 	auto *qualityLabel = new QLabel(text("ReplayClipEditor.Editor.PreviewQuality") + QStringLiteral(":"));
 	qualityLabel->setStyleSheet(QStringLiteral("color: gray;"));
@@ -1069,8 +1063,8 @@ void ReplayClipEditorDialog::updateSizeEstimate()
 	}
 
 	double audioBps = enabledAudioStreams().isEmpty() ? 0.0 : 192000.0;
-	double bytes = (videoBps + audioBps) / 8.0 * durSec;
-	estSizeLabel->setText(QStringLiteral("~%1").arg(humanSize(bytes)));
+	double bytes = std::max(0.0, (videoBps + audioBps) / 8.0 * durSec);
+	estSizeLabel->setText(text("ReplayClipEditor.Export.EstSize").arg(humanSize(bytes)));
 }
 
 /* Derive export settings from the user's OBS recording or streaming config.
@@ -1138,8 +1132,7 @@ ExportSettings ReplayClipEditorDialog::deriveObsSettings(bool streaming) const
 		if (fmt)
 			s.container = mapObsFormatToContainer(QString::fromUtf8(fmt));
 
-		const char *enc =
-			config_get_string(cfg, "SimpleOutput", streaming ? "StreamEncoder" : "RecEncoder");
+		const char *enc = config_get_string(cfg, "SimpleOutput", streaming ? "StreamEncoder" : "RecEncoder");
 		QString mapped = enc ? mapSimpleEncoderId(QString::fromUtf8(enc)) : QString();
 		if (!mapped.isEmpty() && encoderAvailable(mapped))
 			s.encoderName = mapped;
@@ -1250,10 +1243,10 @@ void ReplayClipEditorDialog::startExport()
 		box.setIcon(QMessageBox::Warning);
 		box.setWindowTitle(text("ReplayClipEditor.Overwrite.Title"));
 		box.setText(text("ReplayClipEditor.Overwrite.Text").arg(QFileInfo(exactPath).fileName()));
-		QPushButton *numbered = box.addButton(text("ReplayClipEditor.Overwrite.Numbered"),
-						      QMessageBox::AcceptRole);
-		QPushButton *replace = box.addButton(text("ReplayClipEditor.Overwrite.Replace"),
-						     QMessageBox::DestructiveRole);
+		QPushButton *numbered =
+			box.addButton(text("ReplayClipEditor.Overwrite.Numbered"), QMessageBox::AcceptRole);
+		QPushButton *replace =
+			box.addButton(text("ReplayClipEditor.Overwrite.Replace"), QMessageBox::DestructiveRole);
 		box.addButton(QMessageBox::Cancel);
 		box.setDefaultButton(numbered);
 		box.exec();
@@ -1269,9 +1262,11 @@ void ReplayClipEditorDialog::startExport()
 					enabledAudioStreams(), s, this);
 	/* Only safe to delete once run() has fully returned. */
 	connect(exportWorker, &QThread::finished, exportWorker, &QObject::deleteLater);
-	connect(exportWorker, &ExportWorker::progressChanged, this, [this](int pct) { progressBar->setValue(pct); },
+	connect(
+		exportWorker, &ExportWorker::progressChanged, this, [this](int pct) { progressBar->setValue(pct); },
 		Qt::QueuedConnection);
-	connect(exportWorker, &ExportWorker::exportFinished, this,
+	connect(
+		exportWorker, &ExportWorker::exportFinished, this,
 		[this](bool ok, const QString &msg) {
 			setExportUiBusy(false);
 			if (ok) {
@@ -1306,6 +1301,9 @@ void ReplayClipEditorDialog::setExportUiBusy(bool busy)
 	exportButton->setEnabled(!busy);
 	cancelButton->setVisible(busy);
 	progressBar->setVisible(busy);
+	/* The bar and the status label share one row and both stretch; hide the
+	 * (empty) label during the render so the bar spans the full width. */
+	exportStatusLabel->setVisible(!busy);
 	settingsModeCombo->setEnabled(!busy);
 	customSettingsRow->setEnabled(!busy);
 	folderEdit->setEnabled(!busy);
@@ -1372,8 +1370,7 @@ void ReplayClipEditorDialog::savePersistedSettings()
 	}
 
 	obs_data_t *data = obs_data_create();
-	obs_data_set_string(data, "settings_mode",
-			    settingsModeCombo->currentData().toString().toUtf8().constData());
+	obs_data_set_string(data, "settings_mode", settingsModeCombo->currentData().toString().toUtf8().constData());
 	obs_data_set_string(data, "encoder", encoderCombo->currentData().toString().toUtf8().constData());
 	obs_data_set_string(data, "rate_control", rateControlCombo->currentText().toUtf8().constData());
 	obs_data_set_int(data, "bitrate", bitrateSpin->value());
@@ -1472,10 +1469,10 @@ void ReplayClipEditorDialog::keyPressEvent(QKeyEvent *event)
 		player->togglePlayPause();
 		break;
 	case Qt::Key_I:
-		timeline->setInPoint(player->currentMs());
+		timeline->placeInPoint(player->currentMs());
 		break;
 	case Qt::Key_O:
-		timeline->setOutPoint(player->currentMs());
+		timeline->placeOutPoint(player->currentMs());
 		break;
 	case Qt::Key_Left:
 		if (event->modifiers() & Qt::ShiftModifier)
