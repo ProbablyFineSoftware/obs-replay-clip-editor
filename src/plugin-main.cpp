@@ -122,8 +122,7 @@ static void add_main_menu()
 	added = true;
 
 	QMenu *menu = new QMenu(QString::fromUtf8(obs_module_text("ReplayClipEditor.Menu")), bar);
-	menu->addAction(QString::fromUtf8(obs_module_text("ReplayClipEditor.Menu.OpenBrowser")),
-			[] { open_editor(); });
+	menu->addAction(QString::fromUtf8(obs_module_text("ReplayClipEditor.Menu.OpenBrowser")), [] { open_editor(); });
 	menu->addAction(QString::fromUtf8(obs_module_text("ReplayClipEditor.Menu.OpenEditor")),
 			[] { request_clip_that(); });
 
@@ -159,8 +158,7 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 		obs_data_t *data = path ? obs_data_create_from_json_file(path) : nullptr;
 		bfree(path);
 		if (data) {
-			if (obs_data_get_bool(data, "auto_start_replay_buffer") &&
-			    !obs_frontend_replay_buffer_active())
+			if (obs_data_get_bool(data, "auto_start_replay_buffer") && !obs_frontend_replay_buffer_active())
 				obs_frontend_replay_buffer_start();
 			obs_data_release(data);
 		}
@@ -195,8 +193,7 @@ static void on_frontend_event(enum obs_frontend_event event, void *)
 				if (QFile::rename(path, workPath))
 					path = workPath;
 			}
-			QMetaObject::invokeMethod(
-				qApp, [path] { open_editor_with_clip(path); }, Qt::QueuedConnection);
+			QMetaObject::invokeMethod(qApp, [path] { open_editor_with_clip(path); }, Qt::QueuedConnection);
 		} else {
 			obs_log(LOG_WARNING, "Clip That: replay saved but no path reported");
 		}
@@ -221,9 +218,8 @@ bool obs_module_load(void)
 	/* The menu bar is not ready yet at load; add_main_menu() runs on the
 	 * frontend-finished-loading event instead. */
 
-	open_hotkey_id = obs_hotkey_register_frontend("replay-clip-editor.open",
-						      obs_module_text("ReplayClipEditor.Hotkey.Open"), on_open_hotkey,
-						      nullptr);
+	open_hotkey_id = obs_hotkey_register_frontend(
+		"replay-clip-editor.open", obs_module_text("ReplayClipEditor.Hotkey.Open"), on_open_hotkey, nullptr);
 	clip_hotkey_id = obs_hotkey_register_frontend("replay-clip-editor.clip-that",
 						      obs_module_text("ReplayClipEditor.Hotkey.ClipThat"),
 						      on_clip_hotkey, nullptr);

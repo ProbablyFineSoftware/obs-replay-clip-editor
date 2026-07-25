@@ -78,8 +78,8 @@ public:
 	qint64 durationMs() const { return probedDurationMs; }
 	qint64 currentMs() const { return core.positionMs(); }
 
-	void scrubTo(qint64 ms);   /* pauses on the exact frame */
-	void seekTo(qint64 ms);    /* jumps without changing play/pause state */
+	void scrubTo(qint64 ms); /* pauses on the exact frame */
+	void seekTo(qint64 ms);  /* jumps without changing play/pause state */
 	void stepFrames(int count);
 	void setEnabledTracks(const QVector<int> &streams);
 	void setPreviewQuality(int level); /* 0 full, 1 half, 2 quarter */

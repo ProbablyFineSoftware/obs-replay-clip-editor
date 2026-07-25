@@ -350,16 +350,17 @@ void ExportWorker::run()
 			AVStream *ast = p.inFmt->streams[ai.streamIndex];
 			char layout[128];
 			av_channel_layout_describe(&ai.dec->ch_layout, layout, sizeof(layout));
-			QByteArray args = QStringLiteral("time_base=%1/%2:sample_rate=%3:sample_fmt=%4:channel_layout=%5")
-						  .arg(ast->time_base.num)
-						  .arg(ast->time_base.den)
-						  .arg(ai.dec->sample_rate)
-						  .arg(QString::fromUtf8(av_get_sample_fmt_name(ai.dec->sample_fmt)))
-						  .arg(QString::fromUtf8(layout))
-						  .toUtf8();
+			QByteArray args =
+				QStringLiteral("time_base=%1/%2:sample_rate=%3:sample_fmt=%4:channel_layout=%5")
+					.arg(ast->time_base.num)
+					.arg(ast->time_base.den)
+					.arg(ai.dec->sample_rate)
+					.arg(QString::fromUtf8(av_get_sample_fmt_name(ai.dec->sample_fmt)))
+					.arg(QString::fromUtf8(layout))
+					.toUtf8();
 			QByteArray name = QStringLiteral("in%1").arg(i).toUtf8();
-			ret = avfilter_graph_create_filter(&ai.src, avfilter_get_by_name("abuffer"),
-							   name.constData(), args.constData(), nullptr, p.graph);
+			ret = avfilter_graph_create_filter(&ai.src, avfilter_get_by_name("abuffer"), name.constData(),
+							   args.constData(), nullptr, p.graph);
 			if (ret < 0)
 				return fail(QStringLiteral("Audio filter setup failed: %1").arg(averr(ret)));
 			inNames << QString::fromUtf8(name);
@@ -493,8 +494,8 @@ void ExportWorker::run()
 
 	auto sendVideoFrame = [&](AVFrame *f) -> int {
 		AVFrame *toSend = f;
-		bool needsConvert = f && (f->format != p.venc->pix_fmt || f->width != p.venc->width ||
-					  f->height != p.venc->height);
+		bool needsConvert =
+			f && (f->format != p.venc->pix_fmt || f->width != p.venc->width || f->height != p.venc->height);
 		if (needsConvert) {
 			if (!p.sws) {
 				p.sws = sws_getContext(f->width, f->height, (AVPixelFormat)f->format, p.venc->width,
@@ -581,9 +582,8 @@ void ExportWorker::run()
 					break;
 				while (avcodec_receive_frame(a.dec, p.frame) >= 0) {
 					int64_t pts = p.frame->best_effort_timestamp;
-					qint64 ms = pts != AV_NOPTS_VALUE
-							    ? av_rescale_q(pts, ast->time_base, {1, 1000})
-							    : inMs;
+					qint64 ms = pts != AV_NOPTS_VALUE ? av_rescale_q(pts, ast->time_base, {1, 1000})
+									  : inMs;
 					qint64 frameDurMs =
 						p.frame->nb_samples * 1000LL / std::max(p.frame->sample_rate, 1);
 					if (ms + frameDurMs < inMs) {

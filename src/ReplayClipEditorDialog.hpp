@@ -159,7 +159,7 @@ private:
 	QPointer<ExportWorker> exportWorker;
 	std::atomic<int> filmstripGeneration{0};
 	bool encodersLoaded = false;
-	int enabledTracksMask = ~0; /* bit i = audio track i+1 enabled */
+	int enabledTracksMask = ~0;    /* bit i = audio track i+1 enabled */
 	QString persistedOutputFolder; /* empty = same folder as the clip */
 	QString lastExportedFile;
 };

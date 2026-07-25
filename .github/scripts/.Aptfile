@@ -4,3 +4,13 @@ package 'git'
 package 'jq'
 package 'ninja-build', bin: 'ninja'
 package 'pkg-config'
+
+# FFmpeg development libraries — the plugin's custom preview/export engine links
+# these directly. On Linux they come from the system (obs-deps prebuilts are
+# macOS/Windows only), so they must be installed explicitly here.
+package 'libavcodec-dev'
+package 'libavformat-dev'
+package 'libavutil-dev'
+package 'libavfilter-dev'
+package 'libswscale-dev'
+package 'libswresample-dev'

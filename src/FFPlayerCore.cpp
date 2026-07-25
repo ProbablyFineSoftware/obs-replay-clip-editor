@@ -395,9 +395,8 @@ void FFPlayerCore::threadLoop()
 		if (delta <= 0)
 			return true;
 		std::unique_lock<std::mutex> lk(cmdMutex);
-		return !cmdCv.wait_for(lk, std::chrono::nanoseconds(delta), [&] {
-			return quitFlag || pendingSeekMs >= 0 || tracksDirty || !wantPlaying;
-		});
+		return !cmdCv.wait_for(lk, std::chrono::nanoseconds(delta),
+				       [&] { return quitFlag || pendingSeekMs >= 0 || tracksDirty || !wantPlaying; });
 	};
 
 	auto outputVideoFrame = [&](AVFrame *f) {
@@ -499,10 +498,9 @@ void FFPlayerCore::threadLoop()
 				if (avcodec_send_packet(a.dec, p.apkt) >= 0) {
 					while (avcodec_receive_frame(a.dec, p.frame) >= 0) {
 						int64_t pts = p.frame->best_effort_timestamp;
-						int64_t ams = pts != AV_NOPTS_VALUE
-								      ? av_rescale_q(pts, ast->time_base,
-										     AVRational{1, 1000})
-								      : lastAudioMs;
+						int64_t ams = pts != AV_NOPTS_VALUE ? av_rescale_q(pts, ast->time_base,
+												   AVRational{1, 1000})
+										    : lastAudioMs;
 						int64_t durMs = p.frame->nb_samples * 1000LL /
 								std::max(p.frame->sample_rate, 1);
 						lastAudioMs = std::max(lastAudioMs, ams);

@@ -37,7 +37,15 @@ endif()
 # FFmpeg from obs-deps (runtime DLLs ship with OBS itself)
 find_path(FFMPEG_INCLUDE_DIR NAMES libavcodec/avcodec.h REQUIRED)
 set(FFMPEG_LIBRARIES "")
-foreach(ffmpeg_lib avcodec avformat avutil avfilter swscale swresample)
+foreach(
+  ffmpeg_lib
+  avcodec
+  avformat
+  avutil
+  avfilter
+  swscale
+  swresample
+)
   find_library(FFMPEG_${ffmpeg_lib}_LIBRARY NAMES ${ffmpeg_lib} REQUIRED)
   list(APPEND FFMPEG_LIBRARIES "${FFMPEG_${ffmpeg_lib}_LIBRARY}")
 endforeach()

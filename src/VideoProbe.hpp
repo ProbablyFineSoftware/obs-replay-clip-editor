@@ -13,8 +13,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <functional>
 
 struct AudioTrackInfo {
-	int streamIndex = -1;    /* absolute stream index in the file */
-	QString title;           /* from stream metadata, or "Track N" */
+	int streamIndex = -1; /* absolute stream index in the file */
+	QString title;        /* from stream metadata, or "Track N" */
 	int channels = 0;
 	QString codecName;
 };

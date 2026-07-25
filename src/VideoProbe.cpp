@@ -146,8 +146,8 @@ QImage extractFrame(const QString &path, qint64 timeMs, int maxWidth)
 		if (outH < 2)
 			outH = 2;
 
-		SwsContext *sws = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, outW,
-						 outH, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+		SwsContext *sws = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, outW, outH,
+						 AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
 		if (sws) {
 			QImage img(outW, outH, QImage::Format_RGBA8888);
 			uint8_t *dst[4] = {img.bits(), nullptr, nullptr, nullptr};
@@ -220,8 +220,8 @@ QVector<QImage> extractStrip(const QString &path, qint64 startMs, qint64 spanMs,
 		if (!sws || swsW != f->width || swsH != f->height || swsFmt != (AVPixelFormat)f->format) {
 			if (sws)
 				sws_freeContext(sws);
-			sws = sws_getContext(f->width, f->height, (AVPixelFormat)f->format, outW, outH,
-					     AV_PIX_FMT_RGBA, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+			sws = sws_getContext(f->width, f->height, (AVPixelFormat)f->format, outW, outH, AV_PIX_FMT_RGBA,
+					     SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
 			swsW = f->width;
 			swsH = f->height;
 			swsFmt = (AVPixelFormat)f->format;

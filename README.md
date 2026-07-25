@@ -5,8 +5,8 @@ Grab what just happened, trim it down on a zoomable filmstrip timeline, pick whi
 audio tracks to keep, and export a clean clip without ever needing to leave OBS or
 open a separate video editor.
 
-> **Status:** v1.0.0 · Works with OBS Studio **31.x and 32.x** on Windows.
-> (macOS and Linux build from source via the same CMake project; see below.)
+> **Status:** v1.0.0 · **Windows only** (OBS Studio **31.x and 32.x**).
+> macOS and Linux support is planned — see [Platform support](#platform-support).
 
 ![The Replay Clip Editor trim window, showing the filmstrip timeline with in/out trim handles, per-track audio toggles, and export settings.](docs/screenshot.png)
 
@@ -50,9 +50,7 @@ open a separate video editor.
 
 ### macOS / Linux
 
-Prebuilt packages are produced by CI where available on the
-[Releases page](https://github.com/ProbablyFineSoftware/obs-replay-clip-editor/releases).
-Otherwise, build from source (below).
+Not supported yet — see [Platform support](#platform-support) below.
 
 ## Usage
 
@@ -82,18 +80,28 @@ build system (CMake + platform scripts under `.github/`).
 
 - **Windows:** Visual Studio 2022 + CMake 3.30, then run
   `.github/scripts/Build-Windows.ps1` or configure with the bundled CMake preset.
-- **macOS:** Xcode 16 + CMake 3.30 → `.github/scripts/build-macos`.
-- **Ubuntu 24.04:** `cmake`, `ninja-build`, `pkg-config`, `build-essential` →
-  `.github/scripts/build-ubuntu`.
 
 Dependencies (OBS sources, obs-deps, Qt6) are pinned in `buildspec.json` and
 fetched automatically by the build scripts.
 
+macOS and Linux do not compile yet — see [Platform support](#platform-support).
+
+## Platform support
+
+The plugin is **Windows-only** for now. Everything except one piece is already
+cross-platform; the exception is the live preview, which binds an OBS display to
+the editor window through the Windows-only `gs_window.hwnd` handle. macOS (NSView)
+and Linux (X11/Wayland) need their own native-handle paths before they can build.
+
+Those platforms are on the roadmap and will be enabled once the preview binding is
+implemented and tested on real hardware. The macOS and Ubuntu CI jobs are present
+but disabled (`if: false` in `.github/workflows/build-project.yaml`) until then.
+
 ## Releasing
 
-Pushing a semantic-version tag (e.g. `1.0.0`) to `main` triggers the GitHub
-Actions pipeline, which builds all platforms and drafts a GitHub Release with
-installer packages attached.
+Pushing a semantic-version tag (e.g. `1.0.0`) to `master` triggers the GitHub
+Actions pipeline, which builds the plugin and drafts a GitHub Release with the
+Windows package attached.
 
 ## License
 

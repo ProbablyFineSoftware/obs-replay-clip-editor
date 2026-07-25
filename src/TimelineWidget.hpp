@@ -36,6 +36,11 @@ public:
 
 	void setInPoint(qint64 ms);
 	void setOutPoint(qint64 ms);
+	/* For the I/O "mark" shortcuts and buttons: placing a marker at or past
+	 * the opposite one resets that opposite marker to the clip edge (out->end,
+	 * in->start) instead of refusing to cross it like the draggable handles. */
+	void placeInPoint(qint64 ms);
+	void placeOutPoint(qint64 ms);
 	void setPlayhead(qint64 ms);
 
 	QSize sizeHint() const override { return QSize(640, 100); }

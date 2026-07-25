@@ -224,8 +224,7 @@ void PreviewPlayer::openFile(const QString &path, double fileFps, qint64 fileDur
 	fps = fileFps > 1.0 ? fileFps : 60.0;
 	probedDurationMs = fileDurationMs;
 
-	source = obs_source_create_private("replay-clip-editor-preview-source", "replay-clip-editor-preview",
-					   nullptr);
+	source = obs_source_create_private("replay-clip-editor-preview-source", "replay-clip-editor-preview", nullptr);
 	if (!source)
 		return;
 

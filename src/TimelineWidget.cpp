@@ -102,6 +102,48 @@ void TimelineWidget::setOutPoint(qint64 ms)
 	}
 }
 
+void TimelineWidget::placeInPoint(qint64 ms)
+{
+	if (durationMs <= 0)
+		return;
+	qint64 v = std::clamp<qint64>(ms, 0, std::max<qint64>(durationMs - kMinClipMs, 0));
+	/* Marking an in-point at or beyond the out-point pushes the out-point
+	 * back to the end rather than clamping the in-point short of it. */
+	bool outReset = false;
+	if (v >= outMs) {
+		outMs = durationMs;
+		outReset = true;
+	}
+	bool inChanged = (v != inMs);
+	inMs = v;
+	if (outReset)
+		emit outPointChanged(outMs);
+	if (inChanged)
+		emit inPointChanged(inMs);
+	update();
+}
+
+void TimelineWidget::placeOutPoint(qint64 ms)
+{
+	if (durationMs <= 0)
+		return;
+	qint64 v = std::clamp<qint64>(ms, std::min<qint64>(kMinClipMs, durationMs), durationMs);
+	/* Marking an out-point at or before the in-point resets the in-point to
+	 * the start rather than clamping the out-point past it. */
+	bool inReset = false;
+	if (v <= inMs) {
+		inMs = 0;
+		inReset = true;
+	}
+	bool outChanged = (v != outMs);
+	outMs = v;
+	if (inReset)
+		emit inPointChanged(inMs);
+	if (outChanged)
+		emit outPointChanged(outMs);
+	update();
+}
+
 void TimelineWidget::setPlayhead(qint64 ms)
 {
 	qint64 v = std::clamp<qint64>(ms, 0, durationMs);
@@ -119,8 +161,7 @@ QRectF TimelineWidget::rulerRect() const
 QRectF TimelineWidget::stripRect() const
 {
 	/* leave a taller gap at the bottom for the draggable zoom band */
-	return QRectF(kHandleWidth, kRulerHeight + 4.0, width() - 2.0 * kHandleWidth,
-		      height() - kRulerHeight - 15.0);
+	return QRectF(kHandleWidth, kRulerHeight + 4.0, width() - 2.0 * kHandleWidth, height() - kRulerHeight - 15.0);
 }
 
 QRectF TimelineWidget::minimapBandRect() const
@@ -407,8 +448,8 @@ void TimelineWidget::paintEvent(QPaintEvent *)
 	/* ---- time ruler ---- */
 	{
 		qint64 span = viewEnd - viewStart;
-		static const qint64 stepChoices[] = {100,   250,   500,    1000,   2000,   5000,   10000,
-						     15000, 30000, 60000,  120000, 300000, 600000};
+		static const qint64 stepChoices[] = {100,   250,   500,   1000,   2000,   5000,  10000,
+						     15000, 30000, 60000, 120000, 300000, 600000};
 		qint64 step = stepChoices[12];
 		for (qint64 c : stepChoices) {
 			if (span / c <= 10) {

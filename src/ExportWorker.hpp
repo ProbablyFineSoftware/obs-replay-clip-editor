@@ -34,8 +34,8 @@ class ExportWorker : public QThread {
 	Q_OBJECT
 
 public:
-	ExportWorker(QString inputPath, QString outputPath, qint64 inMs, qint64 outMs,
-		     QVector<int> audioStreamIndices, ExportSettings settings, QObject *parent = nullptr);
+	ExportWorker(QString inputPath, QString outputPath, qint64 inMs, qint64 outMs, QVector<int> audioStreamIndices,
+		     ExportSettings settings, QObject *parent = nullptr);
 
 	void cancel() { cancelled = true; }
 
