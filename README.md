@@ -34,19 +34,16 @@ open a separate video editor.
 
 ### Windows (recommended)
 
-1. Download the latest release from the
+1. Download `obs-replay-clip-editor-<version>-windows-x64.zip` from the
    [Releases page](https://github.com/ProbablyFineSoftware/obs-replay-clip-editor/releases).
 2. **Make sure OBS Studio is closed completely.**
-3. Use either package:
-   - **Installer (`.exe`)** — run it and it places the files for you, **or**
-   - **Portable (`.zip`)** — unzip it over your OBS Studio install folder
-     (typically `C:\Program Files\obs-studio`), merging the `obs-plugins` and
-     `data` folders.
+3. Unzip it over your OBS Studio install folder (typically
+   `C:\Program Files\obs-studio`), merging the `obs-plugins` and `data` folders.
 4. Start OBS. You'll find **Replay Clip Editor** in the menu bar.
 
-> The release binaries are not code-signed, so Windows SmartScreen or your
-> antivirus may warn on the installer. The portable `.zip` avoids this — unzip and
-> go.
+> The release is a portable `.zip` (no installer). The binaries are not
+> code-signed, so if Windows SmartScreen or your antivirus flags the download,
+> choose Keep / allow.
 
 ### macOS / Linux
 
