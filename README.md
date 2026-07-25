@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/replay-clip-editor-logo.png" alt="Replay Clip Editor logo" width="180" />
-</p>
-
 # Replay Clip Editor for OBS Studio
 
 A replay trimmer inspired by Steam's Game Recording, built into OBS Studio. Grab
