@@ -371,8 +371,9 @@ void ExportWorker::run()
 		if (ret < 0)
 			return fail(QStringLiteral("Audio sink setup failed: %1").arg(averr(ret)));
 
-		static const enum AVSampleFormat sinkFmts[] = {AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_NONE};
-		av_opt_set_int_list(p.sink, "sample_fmts", sinkFmts, AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+		static const enum AVSampleFormat sinkFmt = AV_SAMPLE_FMT_FLTP;
+		av_opt_set_bin(p.sink, "sample_fmts", (const uint8_t *)&sinkFmt, sizeof(sinkFmt),
+			       AV_OPT_SEARCH_CHILDREN);
 
 		QString desc;
 		if (p.audio.size() > 1) {
@@ -592,7 +593,7 @@ void ExportWorker::run()
 					}
 					if (ms > outMs) {
 						a.done = true;
-						av_buffersrc_add_frame_flags(a.src, nullptr, 0);
+						(void)av_buffersrc_add_frame_flags(a.src, nullptr, 0);
 						av_frame_unref(p.frame);
 						break;
 					}
@@ -635,10 +636,10 @@ void ExportWorker::run()
 			if (!a.done) {
 				avcodec_send_packet(a.dec, nullptr);
 				while (avcodec_receive_frame(a.dec, p.frame) >= 0) {
-					av_buffersrc_add_frame_flags(a.src, p.frame, AV_BUFFERSRC_FLAG_KEEP_REF);
+					(void)av_buffersrc_add_frame_flags(a.src, p.frame, AV_BUFFERSRC_FLAG_KEEP_REF);
 					av_frame_unref(p.frame);
 				}
-				av_buffersrc_add_frame_flags(a.src, nullptr, 0);
+				(void)av_buffersrc_add_frame_flags(a.src, nullptr, 0);
 				a.done = true;
 			}
 		}

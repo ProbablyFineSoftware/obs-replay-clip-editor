@@ -4,7 +4,7 @@ A replay trimmer inspired by Steam's Game Recording, built into OBS Studio. Grab
 what just happened, trim it on a zoomable filmstrip timeline, choose which audio
 tracks to keep, and export a clean clip without leaving OBS.
 
-> **Status:** v1.0.0, Windows only (OBS Studio 31.x and 32.x). macOS and Linux
+> **Status:** v1.0.1, Windows only (OBS Studio 31.x and 32.x). macOS and Linux
 > are planned; see [Platform support](#platform-support).
 
 ![The Replay Clip Editor trim window, showing the filmstrip timeline with in/out trim handles, per-track audio toggles, and export settings.](docs/screenshot.png)

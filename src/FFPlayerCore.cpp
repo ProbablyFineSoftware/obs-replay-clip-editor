@@ -212,8 +212,8 @@ struct Pipeline {
 		if (avfilter_graph_create_filter(&sink, avfilter_get_by_name("abuffersink"), "out", nullptr, nullptr,
 						 graph) < 0)
 			return false;
-		static const enum AVSampleFormat sinkFmts[] = {AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_NONE};
-		av_opt_set_int_list(sink, "sample_fmts", sinkFmts, AV_SAMPLE_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+		static const enum AVSampleFormat sinkFmt = AV_SAMPLE_FMT_FLTP;
+		av_opt_set_bin(sink, "sample_fmts", (const uint8_t *)&sinkFmt, sizeof(sinkFmt), AV_OPT_SEARCH_CHILDREN);
 
 		QString desc;
 		if (inputs.size() > 1) {
@@ -508,8 +508,8 @@ void FFPlayerCore::threadLoop()
 							av_frame_unref(p.frame);
 							continue;
 						}
-						av_buffersrc_add_frame_flags(a.src, p.frame,
-									     AV_BUFFERSRC_FLAG_KEEP_REF);
+						(void)av_buffersrc_add_frame_flags(a.src, p.frame,
+										   AV_BUFFERSRC_FLAG_KEEP_REF);
 						av_frame_unref(p.frame);
 					}
 				}
